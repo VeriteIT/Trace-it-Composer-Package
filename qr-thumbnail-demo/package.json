@@ -1,0 +1,16 @@
+{
+  "name": "qr-thumbnail-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Proof of concept: Trace-It QR codes composited into news article thumbnails so native Save-as downloads the QR-embedded image.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "thumbs": "node tools/make-thumbnails.js",
+    "verify": "node tools/verify-composite.js"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "express": "^4.19.2"
+  }
+}
