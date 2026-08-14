@@ -9,6 +9,10 @@ node_modules/
 # Build/generated output
 verify-output/
 
+# Runtime state: the articleId -> QR store and the mock CMS's articles.
+# Regenerated on demand; the QR data URIs make it large and noisy in diffs.
+data/
+
 # Logs
 *.log
 npm-debug.log*

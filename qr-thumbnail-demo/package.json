@@ -2,15 +2,26 @@
   "name": "qr-thumbnail-demo",
   "version": "1.0.0",
   "private": true,
-  "description": "Proof of concept: Trace-It QR codes composited into news article thumbnails so native Save-as downloads the QR-embedded image.",
-  "main": "server/index.js",
+  "description": "Proof of concept: a Trace-It QR code placed inside a publisher's article thumbnail from their article ID alone, with no read or write access to their data or S3.",
+  "main": "server/start-all.js",
   "scripts": {
-    "start": "node server/index.js",
+    "start": "node server/start-all.js",
+    "cms": "node server/publisher-site.js",
+    "s3": "node server/fake-s3.js",
+    "traceit": "node server/traceit-service.js",
+    "verify": "node tools/verify-approaches.js",
+    "reset": "node -e \"require('fs').rmSync('data',{recursive:true,force:true});console.log('demo data cleared')\"",
     "thumbs": "node tools/make-thumbnails.js",
-    "verify": "node tools/verify-composite.js"
+    "start:composite": "node server/index.js",
+    "verify:composite": "node tools/verify-composite.js"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.65",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "jsqr": "^1.4.0",
+    "playwright": "^1.62.1"
   }
 }
