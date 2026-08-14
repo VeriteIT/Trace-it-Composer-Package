@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<!--
+  The publisher's newsroom — a stand-in for the CMS publish screen.
+
+  This page exists to make the "capture the ID" step visible. Hitting Publish
+  makes the CMS:
+    1. assign an article ID,
+    2. save the article in its own database, and
+    3. POST { articleId, url, title } to our service.
+
+  Step 3 is the only new code on the publisher's side. The panel on the right
+  shows exactly what left their server and what we sent back, so there is no
+  ambiguity about how little data crosses the boundary.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Newsroom — Island Chronicle CMS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%230a1633'/%3E%3Cg fill='%23fff'%3E%3Crect x='6' y='6' width='8' height='8'/%3E%3Crect x='18' y='6' width='8' height='8'/%3E%3Crect x='6' y='18' width='8' height='8'/%3E%3Crect x='19' y='19' width='3' height='3'/%3E%3Crect x='23' y='23' width='3' height='3'/%3E%3C/g%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+<link rel="stylesheet" href="/css/site.css">
+<style>
+  body { font-family: 'Merriweather Sans', sans-serif; background: #f4f6fa; }
+  .cms-head { background: #0a1633; color: #fff; padding: 14px 0; }
+  .panel { background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; padding: 20px; }
+  .wire { background: #0d1117; color: #c9d1d9; border-radius: 6px; padding: 14px;
+          font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+          font-size: 12px; white-space: pre-wrap; word-break: break-word;
+          max-height: 340px; overflow: auto; }
+  .wire .k { color: #79c0ff; }
+  .wire .s { color: #a5d6ff; }
+  .step { font-size: 13px; }
+  .step .badge { min-width: 22px; }
+  .qr-preview { width: 130px; height: 130px; object-fit: contain;
+                background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; padding: 6px; }
+</style>
+</head>
+<body>
+
+<div class="cms-head">
+  <div class="container d-flex justify-content-between align-items-center">
+    <strong><i class="fa-solid fa-pen-nib"></i> Island Chronicle — Newsroom</strong>
+    <a href="/" class="text-white text-decoration-none small">
+      View site <i class="fa-solid fa-arrow-right"></i></a>
+  </div>
+</div>
+
+<div class="container my-4">
+  <div class="row g-4">
+
+    <div class="col-lg-5">
+      <div class="panel">
+        <h5 class="mb-3">Publish an article</h5>
+        <form id="publishForm">
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Headline</label>
+            <input class="form-control" name="headline" required
+                   value="Coastal rail line to reopen after monsoon repairs">
+          </div>
+          <div class="row g-2">
+            <div class="col-7 mb-3">
+              <label class="form-label small fw-bold">Section</label>
+              <select class="form-select" name="section">
+                <option>Breaking News</option>
+                <option>Business</option>
+                <option>Environment</option>
+                <option>Sports</option>
+              </select>
+            </div>
+            <div class="col-5 mb-3">
+              <label class="form-label small fw-bold">Photo</label>
+              <select class="form-select" name="image">
+                <option value="article-1.jpg">Parliament</option>
+                <option value="article-2.jpg">Port</option>
+                <option value="article-3.jpg">Reservoir</option>
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Byline</label>
+            <input class="form-control" name="byline" value="Staff Reporter">
+          </div>
+          <button class="btn btn-dark w-100" type="submit" id="publishBtn">
+            <i class="fa-solid fa-upload"></i> Publish
+          </button>
+        </form>
+
+        <hr class="my-4">
+        <div class="small text-muted">
+          Publishing assigns an ID, stores the article, then notifies Trace-It.
+          The photo is <em>not</em> uploaded to us and our service never reads it.
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="panel">
+        <h5 class="mb-3">What crossed the boundary</h5>
+
+        <div id="steps" class="mb-3">
+          <div class="step d-flex gap-2 mb-2" data-step="1">
+            <span class="badge bg-secondary">1</span>
+            <span>CMS assigns an article ID and saves the article <em>(their database)</em></span>
+          </div>
+          <div class="step d-flex gap-2 mb-2" data-step="2">
+            <span class="badge bg-secondary">2</span>
+            <span>CMS POSTs the ID to our webhook <em>(the only integration code)</em></span>
+          </div>
+          <div class="step d-flex gap-2 mb-2" data-step="3">
+            <span class="badge bg-secondary">3</span>
+            <span>We mint a Trace-It code and store it against their ID</span>
+          </div>
+          <div class="step d-flex gap-2" data-step="4">
+            <span class="badge bg-secondary">4</span>
+            <span>The code is now servable at <code>/v1/qr/&lt;id&gt;.png</code></span>
+          </div>
+        </div>
+
+        <label class="form-label small fw-bold mb-1">Request sent to our webhook</label>
+        <div class="wire mb-3" id="wireOut">—</div>
+
+        <label class="form-label small fw-bold mb-1">Our response</label>
+        <div class="wire mb-3" id="wireIn">—</div>
+
+        <div id="result" class="d-none">
+          <div class="d-flex align-items-center gap-3">
+            <img class="qr-preview" id="qrPreview" alt="Generated QR code">
+            <div class="small">
+              <div class="mb-1"><strong>Article ID:</strong> <code id="outId"></code></div>
+              <div class="mb-2"><strong>QR source:</strong> <span id="outSource"></span></div>
+              <a class="btn btn-sm btn-outline-dark" id="outLink" href="#">
+                <i class="fa-solid fa-newspaper"></i> Open the article page
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">Codes we hold</h6>
+          <button class="btn btn-sm btn-outline-secondary" id="refreshCodes">
+            <i class="fa-solid fa-rotate"></i> Refresh
+          </button>
+        </div>
+        <div class="small text-muted mb-2">
+          Read from our service at <code>/v1/codes</code>. Keyed by the publisher's
+          article ID — the only piece of their data we hold.
+        </div>
+        <div class="wire" id="codesOut">—</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+$(function () {
+  var TRACEIT = 'http://localhost:3002';
+
+  function paint(json) {
+    return JSON.stringify(json, null, 2)
+      .replace(/"([^"]+)":/g, '<span class="k">"$1"</span>:')
+      .replace(/: "((?:[^"\\]|\\.)*)"/g, ': <span class="s">"$1"</span>');
+  }
+
+  function markSteps(upTo) {
+    $('#steps .step').each(function () {
+      var n = +$(this).data('step');
+      $(this).find('.badge')
+        .toggleClass('bg-success', n <= upTo)
+        .toggleClass('bg-secondary', n > upTo);
+    });
+  }
+
+  $('#publishForm').on('submit', function (e) {
+    e.preventDefault();
+    var data = {};
+    $.each($(this).serializeArray(), function (_, f) { data[f.name] = f.value; });
+
+    $('#publishBtn').prop('disabled', true)
+      .html('<span class="spinner-border spinner-border-sm"></span> Publishing…');
+    markSteps(0);
+    $('#result').addClass('d-none');
+
+    $.ajax({
+      url: '/api/publish',
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(data)
+    })
+      .done(function (res) {
+        var a = res.article;
+        markSteps(res.traceIt && res.traceIt.ok ? 4 : 2);
+
+        $('#wireOut').html(paint({
+          method: 'POST',
+          url: TRACEIT + '/v1/hooks/article-published',
+          headers: { Authorization: 'Bearer ••••••••' },
+          body: { articleId: a.id, url: location.origin + '/article/' + a.id, title: a.headline }
+        }));
+
+        $('#wireIn').html(paint(res.traceIt || { error: 'no response' }));
+
+        if (res.traceIt && res.traceIt.ok) {
+          $('#qrPreview').attr('src', TRACEIT + '/v1/qr/' + encodeURIComponent(a.id) + '.png');
+          $('#outId').text(a.id);
+          $('#outSource').text((res.traceIt.payload && res.traceIt.payload.source) || '—');
+          $('#outLink').attr('href', '/article/' + a.id);
+          $('#result').removeClass('d-none');
+        }
+        loadCodes();
+      })
+      .fail(function (xhr) {
+        $('#wireIn').text('Publish failed: HTTP ' + xhr.status + ' ' + xhr.responseText);
+      })
+      .always(function () {
+        $('#publishBtn').prop('disabled', false)
+          .html('<i class="fa-solid fa-upload"></i> Publish');
+      });
+  });
+
+  function loadCodes() {
+    $.getJSON(TRACEIT + '/v1/codes')
+      .done(function (d) {
+        $('#codesOut').html(paint({
+          mode: d.mode,
+          lazyMint: d.lazyMint,
+          count: d.count,
+          codes: d.codes.map(function (c) {
+            // Trim the data URI, it is thousands of characters.
+            return { articleId: c.articleId, source: c.source,
+                     shortUrl: c.shortUrl, createdAt: c.createdAt };
+          })
+        }));
+      })
+      .fail(function () {
+        $('#codesOut').text('Could not reach ' + TRACEIT + '/v1/codes — is the service running?');
+      });
+  }
+
+  $('#refreshCodes').on('click', loadCodes);
+  loadCodes();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<!--
+  A single article page — where a QR scan lands.
+
+  This page demonstrates the OTHER id-resolution path. The thumbnail here has no
+  data-article-id at all; the script recovers the ID from the URL
+  (/article/108-347979) using its data-id-from-path pattern. Single-article
+  templates therefore need no per-image attribute, which matters because it means
+  the publisher's article template does not have to change either.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Island Chronicle — article</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%230a1633'/%3E%3Cg fill='%23fff'%3E%3Crect x='6' y='6' width='8' height='8'/%3E%3Crect x='18' y='6' width='8' height='8'/%3E%3Crect x='6' y='18' width='8' height='8'/%3E%3Crect x='19' y='19' width='3' height='3'/%3E%3Crect x='23' y='23' width='3' height='3'/%3E%3C/g%3E%3C/svg%3E">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Faustina:ital@0;1&family=Merriweather+Sans:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+<link rel="stylesheet" href="/css/site.css">
+</head>
+<body>
+
+<div class="masthead-bar">
+  <div class="container d-flex justify-content-between align-items-center">
+    <span><a href="/" class="text-decoration-none" style="color:#dfe6f5">
+      <i class="fa-solid fa-arrow-left"></i> Island Chronicle</a></span>
+    <span class="demo-chip"><i class="fa-solid fa-flask"></i> Demonstration site</span>
+  </div>
+</div>
+
+<div class="container my-4">
+  <div class="row">
+    <div class="col-lg-8">
+      <div id="article">
+        <p class="text-muted">Loading…</p>
+      </div>
+    </div>
+    <aside class="col-lg-4">
+      <div class="rail">
+        <h3 class="rail-title">You may have arrived by QR</h3>
+        <p class="rail-note">
+          If you scanned the code on this article's photo, this is where it sent
+          you. In production the scan goes through a Trace-It short link first, so
+          the visit is attributed before the reader lands here.
+        </p>
+        <h3 class="rail-title mt-4">Article ID</h3>
+        <p class="rail-note"><code id="idEcho"></code></p>
+        <p class="rail-note">
+          The QR on this page was matched to that ID alone — the script read it
+          out of the URL, not from any markup.
+        </p>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<footer class="chron-footer">
+  <div class="container">Island Chronicle — fictional publication, demonstration only.</div>
+</footer>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+$(function () {
+  var id = location.pathname.replace(/^.*\/article\//, '');
+  $('#idEcho').text(id || '(none)');
+
+  $.getJSON('/api/article/' + encodeURIComponent(id))
+    .done(function (a) {
+      document.title = a.headline + ' — Island Chronicle';
+      $('#article').html('' +
+        '<article class="story">' +
+          '<div class="story-section">' + esc(a.section) + '</div>' +
+          '<h1 class="story-headline">' + esc(a.headline) + '</h1>' +
+          '<div class="story-meta">' + esc(a.byline) + ' · ' + esc(a.dateline) + '</div>' +
+          // No data-article-id here on purpose — resolved from the URL instead.
+          '<img src="' + esc(a.thumb) + '"' +
+              ' style="float: left; max-width: 340px !important"' +
+              ' class="story-thumb" alt="' + esc(a.caption) + '">' +
+          a.body.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') +
+        '</article>');
+    })
+    .fail(function () {
+      $('#article').html('<p class="text-danger">No article with ID ' + esc(id) + '.</p>');
+    });
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+});
+</script>
+
+<!-- Same one tag. Here it resolves the ID from the URL path instead of markup. -->
+<script src="http://localhost:3002/js/traceit-qr-overlay.js"
+        data-selector="img.story-thumb"
+        data-id-from-path="/article/([A-Za-z0-9._-]+)"
+        data-corner="bottom-right"
+        data-size="26"
+        data-min="52"
+        data-max="160"></script>
+</body>
+</html>
