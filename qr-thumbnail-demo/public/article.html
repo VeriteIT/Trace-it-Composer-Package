@@ -40,17 +40,34 @@
     </div>
     <aside class="col-lg-4">
       <div class="rail">
-        <h3 class="rail-title">You may have arrived by QR</h3>
+        <h3 class="rail-title">Try “Save image as…”</h3>
+        <p class="rail-note mb-2">
+          Right-click the photo and choose <strong>Save image as…</strong> — the
+          saved file has the QR in it. So does <strong>Copy image</strong>,
+          dragging it to the desktop, and printing the page.
+        </p>
+        <p class="rail-note">
+          This page runs <code>data-mode="embed"</code>: our service composited
+          the code into the pixels, so the QR <em>is</em> the image. The homepage
+          uses overlay mode instead — save the photo there and you get a clean
+          copy with no code.
+        </p>
+        <div class="rail-note small" id="embedStatus">
+          <span class="text-muted">checking…</span>
+        </div>
+
+        <h3 class="rail-title mt-4">Article ID</h3>
+        <p class="rail-note"><code id="idEcho"></code></p>
+        <p class="rail-note">
+          The QR was matched to that ID alone — the script read it out of the
+          URL, not from any markup.
+        </p>
+
+        <h3 class="rail-title mt-4">You may have arrived by QR</h3>
         <p class="rail-note">
           If you scanned the code on this article's photo, this is where it sent
           you. In production the scan goes through a Trace-It short link first, so
           the visit is attributed before the reader lands here.
-        </p>
-        <h3 class="rail-title mt-4">Article ID</h3>
-        <p class="rail-note"><code id="idEcho"></code></p>
-        <p class="rail-note">
-          The QR on this page was matched to that ID alone — the script read it
-          out of the URL, not from any markup.
         </p>
       </div>
     </aside>
@@ -93,16 +110,38 @@ $(function () {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+
+  // Report which file the <img> is actually serving, so it is obvious what a
+  // save-as would write. Purely demo instrumentation.
+  document.addEventListener('traceit:embedded', function (e) {
+    $('#embedStatus').html(
+      '<span class="text-success fw-bold">✓ QR is in the image pixels</span><br>' +
+      '<span class="text-muted">serving ' + esc(e.detail.width) + '×' +
+      esc(e.detail.height) + ' from our service</span>'
+    );
+  });
+  document.addEventListener('traceit:error', function () {
+    $('#embedStatus').html(
+      '<span class="text-warning fw-bold">composite unavailable</span><br>' +
+      '<span class="text-muted">showing the untouched S3 photo — the page still works</span>'
+    );
+  });
 });
 </script>
 
-<!-- Same one tag. Here it resolves the ID from the URL path instead of markup. -->
+<!--
+  Same one tag, but data-mode="embed" this time.
+
+  Our service composites the QR into the photo's pixels and the script repoints
+  the <img> at that. So on THIS page, right-click → "Save image as…" produces a
+  file with the QR in it, and so do "Copy image", drag-to-desktop and Ctrl+P.
+  The homepage uses the default overlay mode, so you can compare the two.
+
+  The ID still comes from the URL — no markup change on this template at all.
+-->
 <script src="http://localhost:3002/js/traceit-qr-overlay.js"
+        data-mode="embed"
         data-selector="img.story-thumb"
-        data-id-from-path="/article/([A-Za-z0-9._-]+)"
-        data-corner="bottom-right"
-        data-size="26"
-        data-min="52"
-        data-max="160"></script>
+        data-id-from-path="/article/([A-Za-z0-9._-]+)"></script>
 </body>
 </html>

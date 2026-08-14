@@ -85,19 +85,45 @@ This is asserted, not assumed: `npm run verify` loads the demo in real Chromium 
 confirms the readback throws `SecurityError` against an image origin that sends no CORS
 header, on the same page where the overlay renders correctly.
 
-### Consequences the client should be told about
+### Where the wall actually is
 
-Both follow from not touching the image bytes, and neither is fixable from the frontend
-under C1–C3:
+The wall is the **browser**, not the permissions. Same-origin policy and CORS govern what
+a *page's JavaScript* may read. They say nothing about a server making an HTTP request.
 
-1. **"Save image as…" gives the clean photo, with no QR in it.** The overlay is a
-   separate DOM element, not part of the JPEG.
-2. **The QR does not appear in social share previews.** Facebook / X / WhatsApp read
-   `og:image`, which points at the untouched S3 file.
+So there are two compositing options, not one, and only the first is blocked:
 
-If either is required, it needs server-side compositing at publish time, which needs
-write access to the image derivative — a different project with different permissions.
-See `php/composite.php` and the notes in `README-composite.md`.
+- **Compositing in the browser** — blocked. Requires canvas readback of a cross-origin
+  image, which throws `SecurityError` without CORS headers on their bucket.
+- **Compositing on our server** — **available.** Our service fetches the thumbnail from
+  its public URL, draws the QR in, and serves the result. This is an ordinary GET of a URL
+  already public to every reader. No CORS, no credentials, no privileged access, and
+  nothing written to their storage. C1–C3 are all satisfied.
+
+That means the two limitations of a pure overlay **can** be lifted:
+
+| | Overlay mode | Embed mode (server composite) |
+|---|---|---|
+| QR in the file from "Save image as…" | No | **Yes** |
+| QR in "Copy image" / drag-out / print | Print only | **Yes** |
+| QR reachable by `og:image` | No | **Yes**, if they point the tag at our URL |
+| Image bytes served by | their CDN | **us** |
+| Their photo re-encoded | No | Yes, once (see below) |
+
+**Cost of embed mode, measured** (three 1200×800 demo thumbnails):
+
+- Resolution is unchanged — compositing happens at native size, nothing is rescaled.
+- One extra generation of JPEG loss, at ~53–56 dB PSNR: imperceptible, but real. A PNG
+  source stays PNG and stays lossless.
+- The delivered file roughly **doubles** (~48 KB → ~100 KB): about 35% from the re-encode,
+  the rest because a grid of hard black-and-white edges is expensive to JPEG-encode.
+- Those bytes come from us, so we are in the image delivery path.
+
+**Recommended pattern:** embed on article pages (one image; where readers actually save
+and share), overlay on index and list pages (many thumbnails; nobody is saving). The demo
+does exactly this — compare `/` with `/article/<id>`.
+
+Zero-loss embedding is possible only if they hand us the pre-compression master at publish
+time, since then there is no second generation. Worth asking, not worth blocking on.
 
 ---
 

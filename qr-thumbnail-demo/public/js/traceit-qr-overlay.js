@@ -5,38 +5,45 @@
  *
  * WHAT IT DOES
  *   Finds the article thumbnail, reads the publisher's article ID out of the
- *   DOM, and places a Trace-It QR code inside that image's frame. The QR is
- *   fetched from OUR service, keyed only by that ID.
+ *   DOM, and puts a Trace-It QR code on that image. Everything comes from OUR
+ *   service, keyed only by that ID.
  *
- * WHY AN OVERLAY AND NOT A COMPOSITE
- *   The images live on the publisher's S3 layer, which we have no permission to
- *   read or write. Baking the QR into the image pixels would mean pulling those
- *   bytes into a <canvas> and reading them back out, and canvas readback of a
- *   cross-origin image throws SecurityError unless the bucket sends CORS
- *   headers. We cannot set those headers. So we never touch the pixels: the
- *   publisher's <img> is left exactly as it was, and the QR is a separate
- *   element positioned on top of it.
+ * TWO MODES — pick per template with data-mode
  *
- *   Consequences, stated plainly:
- *     - Nothing about the publisher's S3 setup has to change. Nothing.
- *     - The overlay is NOT part of the image file. A reader who does
- *       "Save image as..." gets the clean photo, with no QR in it.
- *     - The overlay is not in og:image either, so social-share previews will
- *       not show the QR.
- *   If either of those last two is a requirement, it cannot be met from the
- *   frontend under these access constraints — see README, "What this cannot do".
+ *   data-mode="overlay"  (default)
+ *     The QR is a separate element positioned inside the image frame. Their
+ *     photo still loads from their own CDN and we serve no image bytes at all.
+ *     But the QR is not part of the image file, so a native "Save image as…"
+ *     gives the clean photo, and og:image has no QR either.
  *
- * NO CORS IS REQUIRED, ANYWHERE
- *   The QR is rendered as an ordinary image (a CSS background, preloaded via
- *   `new Image()`). Loading an image cross-origin has never required CORS; only
- *   reading its pixels back does, and we never do that. So this works against
- *   the publisher's S3 with default settings AND against our own API with no
- *   Access-Control-Allow-Origin header at all.
+ *   data-mode="embed"
+ *     Our service fetches the photo, composites the QR into the pixels, and
+ *     this script repoints the <img> at that result. Now "Save image as…",
+ *     "Copy image", drag-to-desktop and printing all produce a QR-embedded
+ *     file, and og:image can be pointed at the same URL. The cost is that the
+ *     image bytes come from us instead of their CDN.
+ *
+ * WHY EMBED NEEDS A SERVER AND CANNOT BE DONE HERE
+ *   Compositing in the browser means drawing their photo into a <canvas> and
+ *   reading it back out, and canvas readback of a cross-origin image throws
+ *   SecurityError unless their bucket sends CORS headers — which we have no
+ *   permission to set. But same-origin policy is a BROWSER rule about what page
+ *   scripts may read. It does not apply to our server fetching a public URL. So
+ *   the compositing happens there, and this script only swaps an attribute.
+ *
+ * NO CORS IS REQUIRED, ANYWHERE, IN EITHER MODE
+ *   Both modes only ever DISPLAY images (a CSS background or an <img src>),
+ *   preloaded with `new Image()`. Displaying an image cross-origin has never
+ *   required CORS; only reading its pixels does, and this script never does
+ *   that. So it works against their S3 with default settings and against our
+ *   own API with no Access-Control-Allow-Origin header at all.
  *
  * LAYOUT SAFETY
- *   See ensureFrame(). Two modes: use a frame element the publisher already
- *   has (zero DOM change), or wrap the <img> in a shrink-wrapping span that
- *   inherits its float and margins so the page reflows identically.
+ *   Embed mode adds no elements and changes no styles — only `src`, to an image
+ *   with identical pixel dimensions, so there is nothing to reflow. Overlay mode
+ *   either uses a frame element the publisher already has (zero DOM change) or
+ *   wraps the <img> in a shrink-wrapping span that takes over its float and
+ *   margins so the page reflows identically. See ensureFrame().
  *
  * Dependencies: none. jQuery is used only if it already happens to be present.
  * ===========================================================================
@@ -48,8 +55,27 @@
   var ATTR_EL = 'data-tqr-el'; // marks elements WE created, so we ignore our own mutations
   var ATTR_STATE = 'data-tqr-state';
   var ATTR_STYLE0 = 'data-tqr-style0'; // the image's original inline style, verbatim
+  var ATTR_SRC0 = 'data-tqr-src0';     // the image's original src, for embed mode
 
   var DEFAULTS = {
+    /*
+     * 'overlay'  The QR is a separate element positioned over the photo. Their
+     *            image still comes from their own CDN and we serve no image
+     *            bytes. But the QR is NOT in the file, so "Save image as…"
+     *            gives the clean photo.
+     *
+     * 'embed'    The QR is composited into the image pixels by our service and
+     *            the <img src> is repointed at the result. "Save image as…",
+     *            "Copy image", drag-to-desktop and printing all produce the
+     *            QR-embedded file, because the QR IS the image. Costs: the
+     *            bytes come from us rather than their CDN.
+     *
+     * Embed degrades safely — the S3 photo stays on screen and is only replaced
+     * once the composite has actually loaded, so if our service is slow or down
+     * the reader still sees the article photo.
+     */
+    mode: 'overlay',
+
     // Which images to decorate.
     selector: 'img[data-article-id]',
 
@@ -277,9 +303,29 @@
 
   /* --- QR badge ----------------------------------------------------------- */
 
+  function serviceBase(opts) {
+    return (opts.service || '').replace(/\/+$/, '');
+  }
+
   function qrUrl(articleId, opts) {
-    var base = (opts.service || '').replace(/\/+$/, '');
-    return base + '/v1/qr/' + encodeURIComponent(articleId) + '.png';
+    return serviceBase(opts) + '/v1/qr/' + encodeURIComponent(articleId) + '.png';
+  }
+
+  /**
+   * URL of the photo with the QR composited in, for embed mode.
+   *
+   * The .jpg suffix is cosmetic but worth having: it is what the browser offers
+   * as the default filename in the save dialog, and the endpoint also sends a
+   * Content-Disposition filename.
+   *
+   * `src` is sent only when our service does not already know the image URL for
+   * this article (i.e. the publish webhook did not include it). Once sent, the
+   * service remembers it, so later requests are just the ID.
+   */
+  function framedUrl(articleId, photoUrl, opts) {
+    var u = serviceBase(opts) + '/v1/framed/' + encodeURIComponent(articleId) + '.jpg';
+    if (photoUrl) u += '?src=' + encodeURIComponent(photoUrl);
+    return u;
   }
 
   /**
@@ -291,7 +337,7 @@
    * If the code does not exist for this ID, onerror fires and we render nothing
    * rather than leaving a broken-image box on a publisher's article page.
    */
-  function loadQr(url) {
+  function preloadImage(url) {
     return new Promise(function (resolve, reject) {
       var probe = new Image();
       probe.decoding = 'async';
@@ -363,12 +409,14 @@
 
     img.setAttribute(ATTR_STATE, 'pending');
 
+    if (opts.mode === 'embed') return embed(img, articleId, opts);
+
     var url = qrUrl(articleId, opts);
     if (!pending[url]) {
       // Drop the memo if the load fails, or a transient outage would poison the
       // URL for the rest of the page's life and every later retry — including
       // the MutationObserver's — would reject instantly without a request.
-      pending[url] = loadQr(url).catch(function (err) {
+      pending[url] = preloadImage(url).catch(function (err) {
         delete pending[url];
         throw err;
       });
@@ -409,6 +457,70 @@
       });
   }
 
+  /**
+   * EMBED MODE — repoints the <img> at a server-composited copy of the photo
+   * with the QR already in the pixels.
+   *
+   * This is the only way a native "Save image as…" can produce a QR-embedded
+   * file. Save-as is a browser menu item: no DOM event fires for it, no script
+   * runs during it, and it writes the bytes of the resource the <img> is
+   * displaying. So the QR has to be in those bytes. It cannot be faked from the
+   * page, in any browser.
+   *
+   * Note what this does NOT do: it adds no elements and changes no styles. Only
+   * the src attribute changes, and it changes to an image with identical pixel
+   * dimensions, so there is nothing for the layout to react to.
+   */
+  function embed(img, articleId, opts) {
+    var original = img.getAttribute(ATTR_SRC0) || img.currentSrc || img.getAttribute('src');
+    if (!original) {
+      img.setAttribute(ATTR_STATE, 'skipped-no-src');
+      return Promise.resolve(null);
+    }
+    img.setAttribute(ATTR_SRC0, original);
+
+    // Absolute, so our service receives a URL it can actually fetch even when
+    // the markup used a relative or protocol-relative path.
+    var absolute;
+    try {
+      absolute = new URL(original, window.location.href).href;
+    } catch (e) {
+      absolute = original;
+    }
+
+    var url = framedUrl(articleId, absolute, opts);
+
+    // Preload before swapping. Setting src directly would blank the thumbnail
+    // while the composite downloads, and would leave a broken image if our
+    // service were unreachable. This way the reader keeps seeing the S3 photo
+    // and the swap is a single repaint of identical geometry.
+    return preloadImage(url)
+      .then(function (framed) {
+        img.src = framed.url;
+        img.setAttribute(ATTR_STATE, 'done');
+        img.setAttribute('data-tqr-mode', 'embed');
+        img.dispatchEvent(new CustomEvent('traceit:embedded', {
+          bubbles: true,
+          detail: {
+            articleId: articleId,
+            framedUrl: framed.url,
+            originalUrl: absolute,
+            width: framed.w,
+            height: framed.h
+          }
+        }));
+        return img;
+      })
+      .catch(function (err) {
+        // The S3 photo is untouched and still on screen. Nothing to undo.
+        img.setAttribute(ATTR_STATE, 'error');
+        img.dispatchEvent(new CustomEvent('traceit:error', {
+          bubbles: true, detail: err
+        }));
+        return null;
+      });
+  }
+
   /** Decorates every image matching the selector. Safe to call repeatedly. */
   function decorateAll(options) {
     var opts = assign({}, DEFAULTS, options || {});
@@ -423,6 +535,14 @@
   function teardown() {
     var layers = document.querySelectorAll('[' + ATTR_EL + '="layer"]');
     Array.prototype.forEach.call(layers, function (n) { n.parentNode.removeChild(n); });
+
+    // Embed mode: put the publisher's own image back.
+    var embedded = document.querySelectorAll('[' + ATTR_SRC0 + ']');
+    Array.prototype.forEach.call(embedded, function (img) {
+      img.src = img.getAttribute(ATTR_SRC0);
+      img.removeAttribute(ATTR_SRC0);
+      img.removeAttribute('data-tqr-mode');
+    });
 
     var frames = document.querySelectorAll('[' + ATTR_EL + '="frame"]');
     Array.prototype.forEach.call(frames, function (wrap) {
@@ -476,6 +596,7 @@
     var d = el.dataset || {};
     var o = {};
     var map = {
+      mode: 'mode',
       selector: 'selector', frameSelector: 'frame', service: 'service',
       idAttr: 'idAttr', idFromPath: 'idFromPath', corner: 'corner',
       sizePct: 'size', minPx: 'min', maxPx: 'max', padPct: 'pad',
