@@ -61,14 +61,40 @@ function all() {
 }
 
 /**
+ * Records the article's public thumbnail URL against its ID.
+ *
+ * Needed only for server-side compositing (the "embed" mode), which has to know
+ * which image to draw the QR into. It is a public URL, not privileged data —
+ * the same URL every reader's browser already requests.
+ *
+ * Returns false if there is no record yet, so the caller can decide whether to
+ * mint first.
+ */
+function setImageUrl(articleId, imageUrl) {
+  const rec = db[articleId];
+  if (!rec) return false;
+  if (rec.imageUrl === imageUrl) return true; // no write, no disk churn
+  rec.imageUrl = imageUrl;
+  persist();
+  return true;
+}
+
+/**
  * Returns the QR record for an article, minting it on first request only.
  *
  * @param {string}   articleId
- * @param {function} mint  async () => { qrId, shortUrl, pngDataUri, source }
+ * @param {function} mint   async () => { qrId, shortUrl, pngDataUri, source }
+ * @param {object}  [extra] extra fields to store alongside, e.g. { imageUrl }
  */
-async function getOrCreate(articleId, mint) {
+async function getOrCreate(articleId, mint, extra) {
   const existing = get(articleId);
-  if (existing) return existing;
+  if (existing) {
+    // A later call may know the image URL when the first one did not.
+    if (extra && extra.imageUrl && !existing.imageUrl) {
+      setImageUrl(articleId, extra.imageUrl);
+    }
+    return existing;
+  }
 
   // Someone else is already minting this exact article — wait for their result
   // instead of firing a second identical request at Trace-It.
@@ -83,6 +109,7 @@ async function getOrCreate(articleId, mint) {
       pngDataUri: minted.pngDataUri,
       source: minted.source,
       createdAt: new Date().toISOString(),
+      ...(extra && extra.imageUrl ? { imageUrl: extra.imageUrl } : {}),
     };
     db[articleId] = record;
     persist();
@@ -111,4 +138,4 @@ function reset() {
   persist();
 }
 
-module.exports = { get, getOrCreate, all, remove, reset, DB_FILE };
+module.exports = { get, getOrCreate, setImageUrl, all, remove, reset, DB_FILE };

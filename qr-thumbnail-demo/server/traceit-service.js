@@ -35,7 +35,9 @@
 const path = require('path');
 const express = require('express');
 const store = require('./store');
+const compositor = require('./compositor');
 const { mintQr, MODE } = require('./traceit-client');
+const { imageHostAllowed } = compositor;
 
 const app = express();
 const PORT = process.env.TRACEIT_PORT || 3002;
@@ -176,10 +178,16 @@ app.post('/v1/hooks/article-published', async (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  const { articleId, url, title } = req.body || {};
+  const { articleId, url, title, imageUrl } = req.body || {};
   if (!articleId || !ARTICLE_ID_RE.test(String(articleId))) {
     return res.status(400).json({ error: 'valid articleId required' });
   }
+
+  // Optional, and only needed for embed mode: the public thumbnail URL, so we
+  // can composite the QR into it server-side. Ignored unless it is on the
+  // image-host allowlist.
+  const storedImageUrl =
+    imageUrl && imageHostAllowed(imageUrl) ? imageUrl : undefined;
 
   const destinationUrl = url || articleUrl(articleId);
   if (!destinationAllowed(destinationUrl)) {
@@ -191,8 +199,10 @@ app.post('/v1/hooks/article-published', async (req, res) => {
 
   try {
     const before = store.get(articleId);
-    const record = await store.getOrCreate(articleId, () =>
-      mintQr({ articleId, destinationUrl, title })
+    const record = await store.getOrCreate(
+      articleId,
+      () => mintQr({ articleId, destinationUrl, title }),
+      { imageUrl: storedImageUrl }
     );
     res.status(before ? 200 : 201).json({
       articleId: record.articleId,
@@ -201,6 +211,9 @@ app.post('/v1/hooks/article-published', async (req, res) => {
       source: record.source,
       created: !before,
       qrUrl: `/v1/qr/${encodeURIComponent(articleId)}.png`,
+      framedUrl: record.imageUrl
+        ? `/v1/framed/${encodeURIComponent(articleId)}`
+        : null,
     });
   } catch (err) {
     console.error('[traceit] mint failed:', err.message);
@@ -279,6 +292,98 @@ app.get('/v1/qr/:articleId', rateLimit(120, 60_000), async (req, res) => {
     res.status(502).json({ error: 'mint failed', detail: err.message });
   }
 });
+
+/* --- EMBED MODE: the QR baked into the image pixels ----------------------- */
+
+/**
+ * GET /v1/framed/:articleId  ->  the publisher's thumbnail with the QR IN IT.
+ *
+ * This is the endpoint that makes the browser's native "Save image as…" produce
+ * a QR-embedded file. There is no JavaScript trick involved and none is
+ * possible: save-as writes the bytes of whatever the <img> is displaying, so the
+ * only way to get a QR into the saved file is for the QR to be part of the
+ * image. It is, here, because we composited it.
+ *
+ * Right-click → Copy image, drag-to-desktop, and printing all get the QR too,
+ * for the same reason. So does a social crawler, if the publisher points
+ * og:image at this URL.
+ *
+ * The source image URL comes from our own store (set by the publish webhook),
+ * or from a ?src= parameter for the no-webhook path. Either way it is checked
+ * against the image-host allowlist in compositor.js — a URL parameter that
+ * causes a server-side fetch is an SSRF hole unless it is pinned to known hosts.
+ */
+app.get('/v1/framed/:articleId', rateLimit(240, 60_000), async (req, res) => {
+  // Tolerate an extension so the URL can end in .jpg for tidier saved filenames.
+  const articleId = String(req.params.articleId).replace(/\.(jpe?g|png)$/i, '');
+  if (!ARTICLE_ID_RE.test(articleId)) return res.status(400).end();
+
+  let record;
+  try {
+    const hit = await resolve(articleId);
+    if (!hit) return res.status(404).end();
+    record = hit.record;
+  } catch (err) {
+    console.error('[traceit] mint failed:', err.message);
+    return res.status(502).end();
+  }
+
+  const imageUrl = req.query.src || record.imageUrl;
+  if (!imageUrl) {
+    return res.status(400).json({
+      error: 'no source image known for this article',
+      hint: 'send imageUrl in the publish webhook, or pass ?src=<public image url>',
+    });
+  }
+
+  if (!compositor.imageHostAllowed(imageUrl)) {
+    return res.status(403).json({
+      error: 'source image host not allowed',
+      allowed: compositor.ALLOWED_IMAGE_HOSTS,
+    });
+  }
+
+  // Remember a src that arrived by query string, so later requests need only
+  // the ID and the URL stops being client-controlled.
+  if (req.query.src && !record.imageUrl) {
+    store.setImageUrl(articleId, String(req.query.src));
+  }
+
+  try {
+    const out = await compositor.compositeCached({
+      articleId,
+      imageUrl: String(imageUrl),
+      qrPngDataUri: record.pngDataUri,
+      layout: layoutFromQuery(req.query),
+    });
+
+    const ext = out.mime === 'image/png' ? 'png' : 'jpg';
+    res.set('Content-Type', out.mime);
+    res.set('Content-Length', String(out.buf.length));
+    // Long-lived: the composite for a given article never changes.
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    // Gives save-as a meaningful default filename instead of a random string.
+    res.set('Content-Disposition', `inline; filename="article-${articleId}-qr.${ext}"`);
+    res.set('X-TraceIt-Cache', out.cached ? 'hit' : 'miss');
+    res.set('X-TraceIt-Badge', out.badge ? 'embedded' : `absent (${out.note || 'unknown'})`);
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.send(out.buf);
+  } catch (err) {
+    console.error('[traceit] composite failed:', err.message);
+    res.status(502).json({ error: 'composite failed', detail: err.message });
+  }
+});
+
+/** Per-request layout overrides, so a publisher can tune placement per template. */
+function layoutFromQuery(q) {
+  const out = {};
+  const num = (v) => (v === undefined ? undefined : Number(v));
+  if (q.corner) out.corner = String(q.corner);
+  if (Number.isFinite(num(q.scale))) out.scale = num(q.scale);
+  if (Number.isFinite(num(q.min))) out.minPx = num(q.min);
+  if (Number.isFinite(num(q.max))) out.maxPx = num(q.max);
+  return out;
+}
 
 /* --- Demo introspection --------------------------------------------------- */
 

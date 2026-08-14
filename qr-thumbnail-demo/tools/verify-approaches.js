@@ -176,6 +176,127 @@ async function checkHttp() {
   return articleId;
 }
 
+/* ------------------------------------------------------------ embed mode --- */
+
+/**
+ * The claim being tested: a native "Save image as…" on the article page yields a
+ * file with a scannable QR in it.
+ *
+ * Save-as writes the bytes of the resource the <img> is displaying, so the way
+ * to test it without driving an OS file dialog is to fetch that exact resource
+ * and decode a QR out of it. That is what a save would have written, byte for
+ * byte.
+ */
+async function checkEmbed(articleId) {
+  section('Embed mode (what "Save image as…" writes)');
+
+  const framed = await fetch(`${TRACEIT}/v1/framed/${articleId}.jpg`);
+  assert(framed.ok, 'framed endpoint serves an image', `HTTP ${framed.status}`);
+  assert(
+    framed.headers.get('x-traceit-badge') === 'embedded',
+    'service reports the QR was composited in',
+    framed.headers.get('x-traceit-badge')
+  );
+  assert(
+    /filename="article-.*-qr\.(jpg|png)"/.test(framed.headers.get('content-disposition') || ''),
+    'sends a sensible save-as filename',
+    framed.headers.get('content-disposition')
+  );
+
+  const framedBuf = Buffer.from(await framed.arrayBuffer());
+
+  // Decode the QR straight out of the delivered bytes.
+  const jsQR = require('jsqr');
+  const { loadImage, createCanvas } = require('@napi-rs/canvas');
+  const img = await loadImage(framedBuf);
+  const c = createCanvas(img.width, img.height);
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, img.width, img.height);
+  const decoded = (jsQR.default || jsQR)(
+    new Uint8ClampedArray(data.data), img.width, img.height
+  );
+
+  assert(!!decoded, 'a QR decodes out of the saved bytes',
+    decoded ? decoded.data : 'DECODE FAILED');
+  assert(
+    !!decoded && decoded.data.includes(articleId),
+    'the decoded QR points at this article',
+    decoded ? decoded.data : '—'
+  );
+
+  // Dimensions must match the source exactly: compositing must not rescale the
+  // publisher's photography.
+  const srcRes = await fetch(`${S3}/media/article-1.jpg`);
+  const srcImg = await loadImage(Buffer.from(await srcRes.arrayBuffer()));
+  const record = await (await fetch(`${TRACEIT}/v1/qr/${articleId}`)).json();
+  if (record.pngUrl) {
+    assert(
+      img.width > 0 && img.height > 0,
+      'composite has real dimensions',
+      `${img.width}x${img.height}`
+    );
+  }
+  assert(
+    img.width === srcImg.width && img.height === srcImg.height,
+    'composite keeps the source resolution (no rescaling)',
+    `${img.width}x${img.height} vs source ${srcImg.width}x${srcImg.height}`
+  );
+
+  // SSRF: the source URL can arrive as a query parameter, so it must be pinned.
+  const ssrf = await fetch(
+    `${TRACEIT}/v1/framed/${articleId}.jpg?src=${encodeURIComponent('http://169.254.169.254/latest/meta-data/')}`
+  );
+  assert(ssrf.status === 403, 'refuses a source image host off the allowlist',
+    `HTTP ${ssrf.status} for a link-local metadata address`);
+
+  const ssrfFile = await fetch(
+    `${TRACEIT}/v1/framed/${articleId}.jpg?src=${encodeURIComponent('file:///etc/passwd')}`
+  );
+  assert(ssrfFile.status === 403, 'refuses non-http schemes', `HTTP ${ssrfFile.status}`);
+
+  return framedBuf.length;
+}
+
+/* --------------------------------------------------------- badge geometry --- */
+
+/**
+ * The prototype's placement bug: the minimum-size floor was applied before a
+ * width-only clamp, with nothing constraining height, so a wide short image put
+ * the badge off the top edge. Assert the plan always fits, including the shapes
+ * that used to break.
+ */
+function checkGeometry() {
+  section('Badge placement');
+
+  const { planBadge } = require('../server/compositor');
+  const aspect = 1956 / 1450; // the sample QR's real aspect ratio
+
+  const cases = [
+    [1200, 800], [300, 200], [640, 360], [400, 120],
+    [300, 100], [150, 150], [1200, 300], [2400, 1600], [90, 1200],
+  ];
+
+  const bad = [];
+  for (const [W, H] of cases) {
+    const p = planBadge(W, H, aspect, {});
+    if (!p.fits) continue; // deliberately skipped as too small — acceptable
+    const inside =
+      p.px >= 0 && p.py >= 0 && p.px + p.plateW <= W && p.py + p.plateH <= H;
+    if (!inside) bad.push(`${W}x${H} -> (${p.px},${p.py}) ${p.plateW}x${p.plateH}`);
+  }
+
+  assert(bad.length === 0, 'badge fits inside the image at every aspect ratio',
+    bad.length ? bad.join('; ') : `${cases.length} shapes incl. 400x120 and 90x1200`);
+
+  const wide = planBadge(400, 120, aspect, {});
+  assert(
+    !wide.fits || wide.py >= 0,
+    'the old off-the-top-edge case is handled',
+    wide.fits ? `fits at y=${wide.py}` : `skipped: ${wide.reason}`
+  );
+}
+
 /* ------------------------------------------------------ quota / dedup check -- */
 
 async function checkDedup() {
@@ -333,6 +454,21 @@ async function checkBrowser(articleId) {
     assert(all((b) => b.pointerEvents === 'none'),
       'badge does not swallow pointer events', 'right-click/click on the photo still reaches the photo');
 
+    // Overlay mode must leave the image itself alone: their CDN still serves it,
+    // and a save-as there gets the clean photo. This is the counterpart of the
+    // embed-mode assertion further down.
+    const srcs = await page.evaluate(`(() => [...document.querySelectorAll('img.story-thumb')]
+      .map(i => i.currentSrc || i.src))()`);
+    assert(
+      srcs.length > 0 && srcs.every((s) => s.includes(':3001/media/')),
+      'overlay mode leaves @src pointing at their S3',
+      `${srcs.length} thumbnails still served by their CDN`
+    );
+    assert(
+      srcs.every((s) => !s.includes('/v1/framed/')),
+      'overlay mode serves no image bytes from us'
+    );
+
     // One badge per thumbnail — the in-flight re-entry bug would double them.
     const counts = await page.evaluate(`(() => {
       const frames = [...document.querySelectorAll('[data-tqr-el="frame"]')];
@@ -385,8 +521,8 @@ async function checkBrowser(articleId) {
       restored.style
     );
 
-    /* --- the composite approach, same page, same image ------------------ */
-    section('Browser: why the composite approach is not available');
+    /* --- why compositing has to happen server-side ---------------------- */
+    section('Browser: why compositing must happen on the server');
 
     const taint = await page.evaluate(`(async () => {
       const url = '${S3}/media/article-1.jpg';
@@ -420,7 +556,7 @@ async function checkBrowser(articleId) {
       'the S3 photo displays fine cross-origin', 'which is all the overlay needs');
     assert(taint.readback === 'SecurityError',
       'canvas readback of that photo throws SecurityError',
-      `got: ${taint.readback} — so the QR cannot be baked into the pixels`);
+      `got: ${taint.readback} — so the browser cannot composite; our server can`);
     assert(taint.corsAttr.startsWith('load failed'),
       'crossOrigin="anonymous" cannot load it either',
       taint.corsAttr);
@@ -436,21 +572,53 @@ async function checkBrowser(articleId) {
       { timeout: 15000 }
     ).catch(() => {});
 
+    // The article page runs embed mode, so there is no overlay element here —
+    // the QR is in the image itself and only @src changes.
+    await artPage.waitForFunction(
+      `(() => { const i = document.querySelector('img.story-thumb');
+                return i && i.getAttribute('data-tqr-state') === 'done'; })()`,
+      { timeout: 15000 }
+    ).catch(() => {});
+
     const art = await artPage.evaluate(`(() => {
-      const code = document.querySelector('[data-tqr-el="code"]');
       const img = document.querySelector('img.story-thumb');
+      if (!img) return { found: false };
       return {
-        hasBadge: !!code,
-        hasIdAttr: img ? img.hasAttribute('data-article-id') : null,
-        bg: code ? getComputedStyle(code).backgroundImage : '',
+        found: true,
+        hasIdAttr: img.hasAttribute('data-article-id'),
+        mode: img.getAttribute('data-tqr-mode'),
+        state: img.getAttribute('data-tqr-state'),
+        src: img.currentSrc || img.src,
+        original: img.getAttribute('data-tqr-src0'),
+        naturalW: img.naturalWidth,
+        naturalH: img.naturalHeight,
+        overlayEls: document.querySelectorAll('[data-tqr-el="code"]').length,
+        wrappers: document.querySelectorAll('[data-tqr-el="frame"]').length,
       };
     })()`);
 
+    assert(art.found, 'article thumbnail present');
     assert(art.hasIdAttr === false, 'thumbnail carries no data-article-id here',
       'so the ID must come from the URL');
-    assert(art.hasBadge, 'badge still rendered', 'ID resolved from /article/<id>');
-    assert(art.bg.includes(articleId), 'badge points at the right article',
-      `expected ${articleId} in the QR URL`);
+    assert(art.mode === 'embed', 'embed mode engaged', `state=${art.state}`);
+    assert(
+      art.src.includes(`/v1/framed/${articleId}`),
+      'the <img> now serves the composited file',
+      'so a native save-as writes the QR-embedded image'
+    );
+    assert(
+      (art.original || '').includes(':3001/'),
+      'the original src was the S3 photo',
+      art.original
+    );
+    assert(
+      art.overlayEls === 0 && art.wrappers === 0,
+      'embed mode adds NO elements to the DOM',
+      `overlay spans: ${art.overlayEls}, wrappers: ${art.wrappers}`
+    );
+    assert(art.naturalW > 0 && art.naturalH > 0,
+      'the composite actually decoded in the browser',
+      `${art.naturalW}x${art.naturalH}`);
 
     await artPage.screenshot({ path: path.join(OUT_DIR, 'article-page.png'), fullPage: true });
     await artPage.close();
@@ -512,6 +680,8 @@ async function checkBrowser(articleId) {
 
   try {
     const articleId = await checkHttp();
+    checkGeometry();
+    await checkEmbed(articleId);
     await checkDedup();
     await checkBrowser(articleId);
   } catch (err) {

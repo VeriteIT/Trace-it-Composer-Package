@@ -95,6 +95,10 @@ async function notifyTraceIt(article) {
     articleId: article.id,
     url: `${PUBLIC_BASE}/article/${article.id}`,
     title: article.headline,
+    // Only needed for embed mode (QR baked into the pixels so save-as includes
+    // it). This is the same public S3 URL every reader's browser fetches — not
+    // privileged data, and we still send no credentials and no article content.
+    imageUrl: article.thumb,
   };
 
   try {

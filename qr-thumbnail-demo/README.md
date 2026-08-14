@@ -80,29 +80,90 @@ traceit_notify_published(                            // the addition
 
 That is the entire publisher-side footprint.
 
-## Why an overlay and not baking the QR into the image
+## Two modes: overlay and embed
 
-Because we cannot read their images, and that is not a preference — it is enforced by the
-browser. Drawing a cross-origin image into a `<canvas>` and reading it back throws
-`SecurityError` unless the image host sends `Access-Control-Allow-Origin`. Setting that
-header means changing their bucket configuration, which the access constraints forbid.
+Set `data-mode` per template. Both need nothing from their S3 and no CORS anywhere.
 
-`npm run verify` proves this rather than asserting it: on the same page, in real Chromium,
-it confirms the canvas readback throws `SecurityError` while the overlay renders correctly.
+| | `overlay` (default) | `embed` |
+|---|---|---|
+| How | QR is a separate element inside the image frame | QR composited into the pixels by our service; `src` repointed |
+| **"Save image as…" includes the QR** | **No** | **Yes** |
+| Copy image / drag to desktop | No | **Yes** |
+| Print the page | Yes | Yes |
+| `og:image` can carry the QR | No | **Yes** — point the tag at our URL |
+| Image bytes served by | their CDN | **us** |
+| Their photo re-encoded | No | Once |
+| DOM changes | wraps the `<img>`, or uses their frame | **none — only `src`** |
 
-### What this cannot do
+```html
+<!-- article template: readers save and share here, so bake it in -->
+<script src="https://traceit.example.com/js/traceit-qr-overlay.js"
+        data-mode="embed" data-selector="img.story-thumb"></script>
 
-Two limitations follow directly from not touching the image bytes. **Both should be raised
-with the client**, because neither can be fixed from the frontend:
+<!-- index template: many thumbnails, nobody is saving — keep their CDN -->
+<script src="https://traceit.example.com/js/traceit-qr-overlay.js"
+        data-selector="img.story-thumb"></script>
+```
 
-1. **"Save image as…" gives the clean photo.** The QR is a DOM element, not part of the
-   JPEG, so a saved or copied image has no code in it.
-2. **The QR is not in `og:image`.** Facebook, X and WhatsApp read the meta tag and fetch
-   the untouched S3 file, so share previews show no code.
+The demo does exactly this. Compare <http://localhost:3000> (overlay — save the photo and
+you get a clean copy) with <http://localhost:3000/article/108-347979> (embed — save it and
+the QR is in the file).
 
-If either matters, the QR has to be written into the image at publish time, server-side.
-That needs write access to the image derivative — a different project. The earlier
-composite-based prototype is still in this repo; see
+### Why embed needs a server, and why that is still within the constraints
+
+Compositing in the *browser* is impossible here: it requires canvas readback of a
+cross-origin image, which throws `SecurityError` without CORS headers on their bucket.
+`npm run verify` proves that in real Chromium rather than asserting it.
+
+But **same-origin policy is a browser rule about what page scripts may read.** It does not
+apply to our server fetching a public URL. Our service GETs the thumbnail from the same
+public URL every reader's browser already requests, draws the QR in, and serves the result.
+No CORS, no credentials, no privileged access, and nothing written to their storage — so
+"no read or write permissions on their data" still holds.
+
+There is no way to make save-as include the QR *without* this. Save-as is a native browser
+menu item: no DOM event fires, no script runs, and it writes the bytes of whatever the
+`<img>` is displaying. So the QR must be in those bytes. That cannot be faked from the page
+in any browser.
+
+### What embed mode costs — measured
+
+On the three 1200×800 demo thumbnails:
+
+| | size | PSNR vs source |
+|---|---|---|
+| their original | ~48 KB | — |
+| re-encoded at q=95, no QR | ~65 KB | 53–56 dB |
+| **delivered composite** | **~100 KB** | 53–56 dB |
+
+- **Resolution is unchanged.** Compositing happens at native size; nothing is rescaled.
+  Verified: the composite's dimensions must equal the source's or the check fails.
+- **One extra generation of JPEG loss**, at 53–56 dB — imperceptible, but real. Measured
+  across sources encoded at q=75/82/88/94, so it is not an artifact of one image. A PNG
+  source stays PNG and stays lossless.
+- **The file roughly doubles.** About 35% is the re-encode; the rest is the QR itself — a
+  grid of hard black-and-white edges is close to the most expensive thing a JPEG can carry.
+- Tune with `TRACEIT_JPEG_QUALITY` (default 95; q=98 measurably buys nothing).
+
+Zero-loss embedding is possible only if they give us the pre-compression master at publish
+time. Worth asking about, not worth blocking on.
+
+### Bonus: the QR in social share previews
+
+Facebook, X and WhatsApp read `og:image` from the HTML and fetch that URL directly — they
+never run the page's JavaScript, so an overlay can never reach them. But embed mode's URL is
+a plain image endpoint, so pointing the tag at it puts the QR in share previews:
+
+```html
+<meta property="og:image"
+      content="https://traceit.example.com/v1/framed/<?= $article->id ?>.jpg">
+```
+
+One line in their article template, and it is independent of `data-mode` — they can keep
+overlay mode on-page and still have the QR in shares. Worth raising: a scanned code on a
+WhatsApp-forwarded article is exactly the attribution a publisher cannot otherwise get.
+
+The earlier browser-side composite prototype is still in the repo; see
 [README-composite.md](README-composite.md).
 
 ## Two ways to capture the ID
@@ -151,6 +212,7 @@ Every option has a `data-*` equivalent on the script tag.
 
 | Option | `data-*` | Default | Meaning |
 |---|---|---|---|
+| `mode` | `data-mode` | `overlay` | `embed` bakes the QR into the pixels |
 | `selector` | `data-selector` | `img[data-article-id]` | Which images to decorate |
 | `frameSelector` | `data-frame` | — | Use an existing frame instead of wrapping |
 | `service` | `data-service` | script's own origin | Base URL of our service |
@@ -194,6 +256,8 @@ npm start
 | `ALLOW_LAZY_MINT` | `true` | Set `false` once the webhook is live |
 | `ARTICLE_URL_TEMPLATE` | `http://localhost:3000/article/{id}` | Where a scan lands |
 | `TRACEIT_ALLOWED_DESTINATION_HOSTS` | host of the template above | Hosts a QR may point at |
+| `TRACEIT_ALLOWED_IMAGE_HOSTS` | `localhost:3001,…` | **Their S3/CDN hosts.** Embed mode fetches images server-side, so this allowlist is what stops it being an SSRF hole |
+| `TRACEIT_JPEG_QUALITY` | `95` | Re-encode quality for embed mode |
 | `PORT` / `S3_PORT` / `TRACEIT_PORT` | `3000` / `3001` / `3002` | Ports |
 
 ## Files
@@ -202,6 +266,7 @@ npm start
 |---|---|
 | `public/js/traceit-qr-overlay.js` | **The deliverable** — the overlay component |
 | `server/traceit-service.js` | **Ours.** Webhook, QR endpoints, serves the script |
+| `server/compositor.js` | Server-side compositing — what makes save-as work |
 | `server/traceit-client.js` | **The only file that knows the Trace-It API shape** |
 | `server/store.js` | articleId → code, held on our side; mint-once guarantee |
 | `server/publisher-site.js` | **Theirs.** Mock CMS; contains the one integration call |
