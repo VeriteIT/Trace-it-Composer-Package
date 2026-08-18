@@ -11,7 +11,7 @@
  * Two ways in, matching the two ways an article ID can reach us:
  *
  *   PATH A (preferred) — publish-time webhook
- *     POST /v1/hooks/article-published   { articleId, url, title }
+ *     POST /v1/hooks/article-published   { articleId, url, imageUrl? }
  *     Authorization: Bearer <TRACEIT_WEBHOOK_SECRET>
  *     The CMS calls this once when an article goes live. One mint per article,
  *     at a predictable time, authenticated. Quota is impossible to abuse from
@@ -190,7 +190,8 @@ app.post('/v1/hooks/article-published', async (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  const { articleId, url, title, imageUrl } = req.body || {};
+  // No `title`: the Trace-It title is always the post ID. See traceit-client.js.
+  const { articleId, url, imageUrl } = req.body || {};
   if (!articleId || !ARTICLE_ID_RE.test(String(articleId))) {
     return res.status(400).json({ error: 'valid articleId required' });
   }
@@ -217,7 +218,7 @@ app.post('/v1/hooks/article-published', async (req, res) => {
         // Same reasoning as resolve(): a free read before a quota-charging write.
         const found = await getQrByArticleId(articleId);
         if (found) return found;
-        return mintQr({ articleId, destinationUrl, title });
+        return mintQr({ articleId, destinationUrl });
       },
       { imageUrl: storedImageUrl }
     );
@@ -268,7 +269,7 @@ async function resolve(articleId) {
     const found = await getQrByArticleId(articleId);
     if (found) return found;
 
-    return mintQr({ articleId, destinationUrl: articleUrl(articleId), title: null });
+    return mintQr({ articleId, destinationUrl: articleUrl(articleId) });
   });
 
   return { record, cached: false };

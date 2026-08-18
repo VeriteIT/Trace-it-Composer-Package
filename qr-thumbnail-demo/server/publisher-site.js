@@ -94,10 +94,13 @@ async function notifyTraceIt(article) {
   const body = {
     articleId: article.id,
     url: `${PUBLIC_BASE}/article/${article.id}`,
-    title: article.headline,
-    // Only needed for embed mode (QR baked into the pixels so save-as includes
-    // it). This is the same public S3 URL every reader's browser fetches — not
-    // privileged data, and we still send no credentials and no article content.
+    // No headline is sent. Trace-It names the code by post ID, so a title here
+    // would be accepted and discarded — see traceit-client.js.
+    //
+    // imageUrl is only needed for embed mode (QR baked into the pixels so
+    // save-as includes it). It is the same public S3 URL every reader's browser
+    // already fetches — not privileged data. Still no credentials, no article
+    // content.
     imageUrl: article.thumb,
   };
 

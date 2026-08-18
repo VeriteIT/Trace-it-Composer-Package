@@ -30,12 +30,18 @@ declare(strict_types=1);
  * publish action over. On failure the code is created on first page view
  * instead (the lazy path), so nothing is permanently lost.
  *
- * @param string      $articleId  The CMS's own article ID.
- * @param string      $articleUrl Public URL of the article.
- * @param string|null $title      Optional label for the Trace-It dashboard.
+ * No headline is sent. Trace-It names the code by post ID, which keeps a
+ * dashboard row mapped to a CMS post without anyone matching wording, and
+ * survives the headline being edited after publishing.
+ *
+ * @param string      $articleId  The CMS's own article ID. Becomes the postId.
+ * @param string      $articleUrl Public URL of the article. Becomes targetUrl.
+ * @param string|null $imageUrl   Public thumbnail URL. Only needed for embed
+ *                                mode, where the QR is composited into the photo
+ *                                so that Save-as includes it.
  * @return bool  true if Trace-It acknowledged.
  */
-function traceit_notify_published(string $articleId, string $articleUrl, ?string $title = null): bool
+function traceit_notify_published(string $articleId, string $articleUrl, ?string $imageUrl = null): bool
 {
     $endpoint = getenv('TRACEIT_SERVICE') ?: 'https://traceit.example.com';
     $secret   = getenv('TRACEIT_WEBHOOK_SECRET') ?: '';
@@ -48,7 +54,9 @@ function traceit_notify_published(string $articleId, string $articleUrl, ?string
     $payload = json_encode([
         'articleId' => $articleId,
         'url'       => $articleUrl,
-        'title'     => $title,
+        // Only needed for embed mode, where the QR is composited into the photo
+        // so that Save-as includes it. Same public URL readers already fetch.
+        'imageUrl'  => $imageUrl,
     ], JSON_UNESCAPED_SLASHES);
 
     $ch = curl_init(rtrim($endpoint, '/') . '/v1/hooks/article-published');
@@ -91,8 +99,8 @@ function traceit_notify_published(string $articleId, string $articleUrl, ?string
  *
  *     traceit_notify_published(                     // <- the addition
  *         $articleId,
- *         'https://www.example.lk/article/' . $articleId,
- *         $draft->headline
+ *         'https://www.example.lk/article/' . $articleId,   // must be https
+ *         $article->thumbUrl                                // only for embed mode
  *     );
  *
  * And in the article template, the thumbnail gains one attribute:

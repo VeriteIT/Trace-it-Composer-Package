@@ -88,7 +88,6 @@ function notify_traceit(array $article, string $service, string $secret, string 
     $payload = json_encode([
         'articleId' => $article['id'],
         'url'       => $publicBase . '/article/' . $article['id'],
-        'title'     => $article['headline'],
         // Only needed for embed mode. The same public S3 URL every reader's
         // browser already fetches — not privileged data.
         'imageUrl'  => $article['thumb'],
