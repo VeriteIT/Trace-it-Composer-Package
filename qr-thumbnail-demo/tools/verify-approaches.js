@@ -396,7 +396,7 @@ async function checkBrowser(articleId) {
     /* --- baseline: overlay script blocked ------------------------------- */
     const basePage = await context.newPage();
     await basePage.route(OVERLAY_SCRIPT, (route) => route.abort());
-    await basePage.goto(`${CMS}/`, { waitUntil: 'load' });
+    await basePage.goto(`${CMS}/?mode=overlay`, { waitUntil: 'load' });
     await settle(basePage);
     const before = await basePage.evaluate(MEASURE);
     await basePage.screenshot({ path: path.join(OUT_DIR, 'without-overlay.png'), fullPage: true });
@@ -416,7 +416,9 @@ async function checkBrowser(articleId) {
       if (r.status() >= 400) badResponses.push(`HTTP ${r.status()} ${r.url()}`);
     });
 
-    await page.goto(`${CMS}/`, { waitUntil: 'load' });
+    // ?mode=overlay — the demo defaults to embed now, so the overlay-specific
+    // assertions below have to ask for overlay explicitly.
+    await page.goto(`${CMS}/?mode=overlay`, { waitUntil: 'load' });
     await settle(page);
     await page.waitForFunction(
       `document.querySelectorAll('[data-tqr-el="code"]').length > 0`,
@@ -623,11 +625,75 @@ async function checkBrowser(articleId) {
     await artPage.screenshot({ path: path.join(OUT_DIR, 'article-page.png'), fullPage: true });
     await artPage.close();
 
+    /* --- the default: every thumbnail saves with the QR ----------------- */
+    section('Browser: default mode on a list page');
+
+    const listPage = await context.newPage();
+    await listPage.goto(`${CMS}/`, { waitUntil: 'load' });
+    await settle(listPage);
+    await listPage.waitForFunction(
+      `(() => { const t = [...document.querySelectorAll('img.story-thumb')];
+                return t.length > 0 && t.every(i => i.getAttribute('data-tqr-state') === 'done'); })()`,
+      { timeout: 20000 }
+    ).catch(() => {});
+
+    const list = await listPage.evaluate(`(() => {
+      const imgs = [...document.querySelectorAll('img.story-thumb')];
+      return {
+        n: imgs.length,
+        framed: imgs.filter(i => (i.currentSrc || i.src).includes('/v1/framed/')).length,
+        modes: [...new Set(imgs.map(i => i.getAttribute('data-tqr-mode')))],
+      };
+    })()`);
+
+    assert(list.n > 0, 'list page has thumbnails', `${list.n}`);
+    assert(
+      list.framed === list.n,
+      'EVERY thumbnail serves the QR-embedded file by default',
+      `${list.framed}/${list.n} — so save-as works on every image, not just article pages`
+    );
+    await listPage.close();
+
+    /* --- embed must fall back, never leave the page worse off ----------- */
+    section('Browser: embed failure falls back to an overlay');
+
+    const failPage = await context.newPage();
+    // Simulate our compositor being unavailable / the image host not allowlisted.
+    await failPage.route('**/v1/framed/**', (route) => route.abort());
+    await failPage.goto(`${CMS}/`, { waitUntil: 'load' });
+    await settle(failPage);
+    await failPage.waitForFunction(
+      `document.querySelectorAll('[data-tqr-el="code"]').length > 0`,
+      { timeout: 20000 }
+    ).catch(() => {});
+
+    const fallback = await failPage.evaluate(`(() => {
+      const imgs = [...document.querySelectorAll('img.story-thumb')];
+      return {
+        n: imgs.length,
+        badges: document.querySelectorAll('[data-tqr-el="code"]').length,
+        stillS3: imgs.filter(i => (i.currentSrc || i.src).includes(':3001/media/')).length,
+      };
+    })()`);
+
+    assert(
+      fallback.badges > 0,
+      'a QR still appears when compositing fails',
+      `${fallback.badges} overlay badge(s) drawn instead`
+    );
+    assert(
+      fallback.stillS3 === fallback.n,
+      'the publisher photo is untouched in that case',
+      `${fallback.stillS3}/${fallback.n} still served by their CDN`
+    );
+    await failPage.screenshot({ path: path.join(OUT_DIR, 'embed-fallback.png'), fullPage: true });
+    await failPage.close();
+
     /* --- mobile: the float re-sync ------------------------------------- */
     section('Browser: responsive re-sync');
 
     await page.setViewportSize({ width: 420, height: 900 });
-    await page.reload({ waitUntil: 'load' });
+    await page.goto(`${CMS}/?mode=overlay`, { waitUntil: 'load' });
     await settle(page);
     await page.waitForFunction(
       `document.querySelectorAll('[data-tqr-el="code"]').length > 0`,

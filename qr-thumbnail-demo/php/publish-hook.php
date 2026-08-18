@@ -14,10 +14,9 @@
  * Requires: ext-curl. No framework, no Composer.
  *
  * ---------------------------------------------------------------------------
- * NOT EXECUTED. PHP was not available in the environment where this demo was
- * built, so this file has never been run. It mirrors server/publisher-site.js,
- * which IS exercised by the demo. Lint it (`php -l publish-hook.php`) against
- * the target PHP version before shipping.
+ * `php -l` CLEAN on PHP 8.4.24, but not executed here — it POSTs into a live
+ * publish flow, which is exercised end to end by notifyTraceIt() in
+ * server/publisher-site.js instead. Re-lint against the target PHP version.
  * ---------------------------------------------------------------------------
  */
 
