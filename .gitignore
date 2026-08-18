@@ -5,6 +5,11 @@
 
 # Dependencies
 node_modules/
+# Composer deps for the PHP demo layer. composer.json/lock ARE committed so the
+# tree is reproducible; the installed packages are not.
+vendor/
+# Locally installed composer.phar
+.tools/
 
 # Build/generated output
 verify-output/
