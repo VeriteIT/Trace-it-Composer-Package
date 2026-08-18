@@ -194,8 +194,30 @@ async function checkHttp() {
 async function checkEmbed(articleId) {
   section('Embed mode (what "Save image as…" writes)');
 
-  const framed = await fetch(`${TRACEIT}/v1/framed/${articleId}.jpg`);
-  assert(framed.ok, 'framed endpoint serves an image', `HTTP ${framed.status}`);
+  const photo = `${S3}/media/article-1.jpg`;
+
+  /*
+   * The publish webhook sends only the post ID and the article URL, so at this
+   * point the service does not yet know WHICH photo to composite. That is not a
+   * gap: the frontend knows — it is the src of the <img> it is about to replace —
+   * and passes it once, which is what the ?src= below models.
+   *
+   * Asked bare, before anyone has supplied it, the endpoint must say so clearly
+   * rather than guess or 500. Assert that first, because it is the state a social
+   * crawler hits and the reason imageUrl exists as an optional webhook field.
+   */
+  const bare = await fetch(`${TRACEIT}/v1/framed/${articleId}.jpg`);
+  assert(
+    bare.status === 400,
+    'a bare request explains that no source image is known yet',
+    `HTTP ${bare.status} — the webhook sends only postId + url, by design`
+  );
+
+  const framed = await fetch(
+    `${TRACEIT}/v1/framed/${articleId}.jpg?src=${encodeURIComponent(photo)}`
+  );
+  assert(framed.ok, 'framed endpoint serves an image once the frontend supplies ?src=',
+    `HTTP ${framed.status}`);
   assert(
     framed.headers.get('x-traceit-badge') === 'embedded',
     'service reports the QR was composited in',
@@ -245,6 +267,20 @@ async function checkEmbed(articleId) {
     img.width === srcImg.width && img.height === srcImg.height,
     'composite keeps the source resolution (no rescaling)',
     `${img.width}x${img.height} vs source ${srcImg.width}x${srcImg.height}`
+  );
+
+  /*
+   * The service must REMEMBER the image URL the frontend supplied, so later
+   * requests need only the ID. This is what makes og:image workable and what
+   * keeps the URL from being client-controlled forever — without it every
+   * request would have to carry ?src=, and anyone could swap in a different
+   * photo for a given article.
+   */
+  const remembered = await fetch(`${TRACEIT}/v1/framed/${articleId}.jpg`);
+  assert(
+    remembered.ok,
+    'the same URL now works bare — the source image was remembered',
+    `HTTP ${remembered.status} with no ?src=`
   );
 
   // SSRF: the source URL can arrive as a query parameter, so it must be pinned.
