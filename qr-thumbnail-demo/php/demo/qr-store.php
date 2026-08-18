@@ -145,8 +145,20 @@ final class QrStore
 
             $record = [
                 'articleId' => $articleId,
-                'qrId'      => $minted['qrId'],
-                'shortUrl'  => $minted['shortUrl'],
+                // Trace-It's own id, {tenantPrefix}-{postId}. Kept for support
+                // questions; nothing addresses a code by it, postId is enough.
+                'qrId'      => $minted['qrId'] ?? null,
+                'postId'    => $minted['postId'] ?? null,
+                // Where a scan actually goes: the Trace-It short link, which
+                // redirects and attributes the visit. This is what the QR encodes.
+                'shortUrl'  => $minted['shortUrl'] ?? null,
+                // The "Original Source" button on the Trace-It landing page.
+                'targetUrl' => $minted['targetUrl'] ?? null,
+                // Trace-It's durable public PNG.
+                'pngUrl'    => $minted['pngUrl'] ?? null,
+                // Did Trace-It actually mint (and charge quota), or did we adopt
+                // a code that already existed? Distinct from our cache state.
+                'traceItCreated' => ($minted['created'] ?? false) === true,
                 'source'    => $minted['source'],
                 'createdAt' => gmdate('c'),
             ];
@@ -247,22 +259,43 @@ final class QrStore
         }
 
         /*
-         * ASSUMED Trace-It API shape — the repo is private and could not be read.
-         * This mirrors server/traceit-client.js; correct both together.
-         *   POST {base}/api/v1/qr  { sourceUrls, name, folder, reference }
-         *   -> { id, shortUrl, qr: { png: "data:image/png;base64,...", pngUrl } }
+         * Trace-It API, VERIFIED against its source (src/app/api/v1/qr/route.ts,
+         * src/lib/api-qr.ts) and public/docs/api.html.
+         *
+         *   POST {base}/api/v1/qr   { postId, title?, targetUrl?, folder? }
+         *     -> 201 { …, created: true }   first publish, charges quota
+         *     -> 200 { …, created: false }  later publishes, free
+         *
+         * Idempotent, so calling it on every publish is safe and intended.
+         * Mirrors server/traceit-client.js — correct both together.
          */
-        $payload = json_encode([
-            'sourceUrls' => [$destinationUrl],
-            'name'       => $title ?: $destinationUrl,
-            'folder'     => getenv('TRACEIT_FOLDER') ?: 'Newsroom thumbnails',
-            'reference'  => $articleId,
-        ], JSON_UNESCAPED_SLASHES);
+        $postId = self::normalisePostId($articleId);
+
+        // Before creating, ask whether it already exists: by-post reads never
+        // charge monthly quota, creates do. Our store is only a cache, so after
+        // a redeploy this is what stops us re-minting every article.
+        $existing = $this->fetchByPostId($postId);
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $body = ['postId' => $postId];
+        // Only send fields we have: Trace-It treats a present key as an update,
+        // so sending an empty title would blank a title set earlier.
+        if ($title) {
+            $body['title'] = $title;
+        }
+        if ($destinationUrl) {
+            $body['targetUrl'] = $destinationUrl;
+        }
+        if ($folder = (getenv('TRACEIT_FOLDER') ?: 'Newsroom thumbnails')) {
+            $body['folder'] = $folder;
+        }
 
         $ch = curl_init($base . '/api/v1/qr');
         curl_setopt_array($ch, [
             CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_POSTFIELDS     => json_encode($body, JSON_UNESCAPED_SLASHES),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 15,
             CURLOPT_HTTPHEADER     => [
@@ -271,38 +304,144 @@ final class QrStore
                 'Accept: application/json',
             ],
         ]);
-        $body   = curl_exec($ch);
+        $raw    = curl_exec($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err    = curl_error($ch);
         curl_close($ch);
 
-        if ($body === false || $status < 200 || $status >= 300) {
-            throw new RuntimeException('Trace-It mint failed: ' . ($err !== '' ? $err : "HTTP $status"));
+        if ($raw === false || $status < 200 || $status >= 300) {
+            throw new RuntimeException('Trace-It create failed: ' . self::describeError($raw, $status, $err));
         }
 
-        $data = json_decode((string) $body, true);
-        $uri  = $data['qr']['png'] ?? null;
+        return $this->toRecord(json_decode((string) $raw, true) ?: []);
+    }
 
-        if (is_string($uri) && ($p = strpos($uri, 'base64,')) !== false) {
-            $png = base64_decode(substr($uri, $p + 7), true);
-            if ($png === false) {
-                throw new RuntimeException('Trace-It returned an undecodable QR');
+    /**
+     * Trace-It's postId rules, from sanitizePostId() in src/lib/api-qr.ts:
+     * letters, digits, underscore and hyphen; must start and end alphanumeric;
+     * lowercased (post IDs are case-insensitive); 48 characters max. No dots.
+     *
+     * @throws RuntimeException if the ID cannot be used as-is. Deliberately not
+     *         rewritten — rewriting could map two distinct posts onto one QR.
+     */
+    public static function normalisePostId($raw): string
+    {
+        $trimmed = trim((string) $raw);
+        if ($trimmed === '') {
+            throw new RuntimeException('postId is required');
+        }
+        if (strlen($trimmed) > 48) {
+            throw new RuntimeException('postId must be 48 characters or fewer (got ' . strlen($trimmed) . ')');
+        }
+        $postId = strtolower($trimmed);
+        if (!preg_match('/^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/', $postId)) {
+            throw new RuntimeException(
+                'postId "' . $trimmed . '" is not valid: only letters, digits, underscore and '
+                . 'hyphen, and it must start and end with a letter or digit'
+            );
+        }
+        return $postId;
+    }
+
+    /**
+     * GET /api/v1/qr/by-post/{postId} — free of monthly quota, still rate-limited.
+     * SERVER-TO-SERVER ONLY: it sends the secret key.
+     *
+     * @return array{qrId:?string,postId:?string,shortUrl:?string,targetUrl:?string,pngUrl:?string,png:string,source:string}|null
+     */
+    private function fetchByPostId(string $postId): ?array
+    {
+        $key  = getenv('TRACEIT_API_KEY') ?: '';
+        $base = rtrim(getenv('TRACEIT_BASE') ?: '', '/');
+        if ($key === '' || $base === '' || !self::baseIsConfigured($base)) {
+            return null;
+        }
+
+        $ch = curl_init($base . '/api/v1/qr/by-post/' . rawurlencode($postId));
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . $key,
+                'Accept: application/json',
+            ],
+        ]);
+        $raw    = curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($status === 404) {
+            return null;   // no code for that post yet; the caller will create one
+        }
+        if ($raw === false || $status < 200 || $status >= 300) {
+            // A failed lookup must not block a create — fall through and mint.
+            error_log('[traceit] by-post lookup failed (HTTP ' . $status . '); will attempt create');
+            return null;
+        }
+
+        return $this->toRecord(json_decode((string) $raw, true) ?: []);
+    }
+
+    /**
+     * Normalises a Trace-It response.
+     *
+     * The subtle bit: `qr.png` (a base64 data URI) is populated ONLY when
+     * `created` is true. Updates and by-post reads leave it as an empty string,
+     * because the QR encodes shortUrl and that has not changed. Code that assumes
+     * qr.png is always present works on first publish and breaks on the second —
+     * so fall back to the public qr.pngUrl.
+     *
+     * @param array<string,mixed> $data
+     */
+    private function toRecord(array $data): array
+    {
+        $png = null;
+        $uri = $data['qr']['png'] ?? null;
+
+        if (is_string($uri) && $uri !== '' && ($p = strpos($uri, 'base64,')) !== false) {
+            $decoded = base64_decode(substr($uri, $p + 7), true);
+            if ($decoded !== false) {
+                $png = $decoded;
             }
-        } elseif (!empty($data['qr']['pngUrl'])) {
+        }
+
+        if ($png === null && !empty($data['qr']['pngUrl'])) {
+            // qr.pngUrl is public, so this deliberately sends no auth header.
             $png = $this->fetch((string) $data['qr']['pngUrl']);
-            if ($png === null) {
-                throw new RuntimeException('could not fetch the hosted QR PNG');
-            }
-        } else {
-            throw new RuntimeException('Trace-It response contained no QR image');
+        }
+
+        if ($png === null) {
+            throw new RuntimeException('Trace-It response contained no usable QR image');
         }
 
         return [
-            'qrId'     => $data['id'] ?? null,
-            'shortUrl' => $data['shortUrl'] ?? null,
-            'png'      => $png,
-            'source'   => 'trace-it',
+            'qrId'      => $data['id'] ?? null,
+            'postId'    => $data['postId'] ?? null,
+            'shortUrl'  => $data['shortUrl'] ?? null,
+            'targetUrl' => $data['targetUrl'] ?? null,
+            'pngUrl'    => $data['qr']['pngUrl'] ?? null,
+            'png'       => $png,
+            // Trace-It's OWN created flag: true only when it actually minted a new
+            // code and charged one unit of monthly quota. 201 sets it; a repeat
+            // POST returns 200 with false; by-post omits it entirely. This is the
+            // only thing that answers "did that cost quota?" — do not confuse it
+            // with our local cache being cold, which is a different question.
+            'created'   => ($data['created'] ?? false) === true,
+            'source'    => 'trace-it',
         ];
+    }
+
+    /** Surfaces Trace-It's { error: { code, message } } instead of a bare status. */
+    private static function describeError($raw, int $status, string $curlErr): string
+    {
+        if ($curlErr !== '') {
+            return $curlErr;
+        }
+        $j = is_string($raw) ? json_decode($raw, true) : null;
+        if (isset($j['error']['code'])) {
+            return $j['error']['code'] . ': ' . ($j['error']['message'] ?? '') . " (HTTP $status)";
+        }
+        return "HTTP $status";
     }
 
     /** Demo-only. A real, scannable code so the phone test works offline. */

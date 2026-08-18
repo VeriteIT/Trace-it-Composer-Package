@@ -6,6 +6,19 @@ with **no read or write access to the publisher's data or their S3 bucket**.
 
 The requirement this was built against is recorded in [REQUIREMENT.md](REQUIREMENT.md).
 
+## The three moving parts
+
+| | What happens | Where |
+|---|---|---|
+| **1. On publish** | The CMS POSTs `postId` + `title` (optional) + `targetUrl` (the live article URL) to Trace-It | [`php/publish-hook.php`](php/publish-hook.php) → `POST /api/v1/qr` |
+| **2. On render** | The frontend component fetches the matching QR for that article ID and puts it on the thumbnail | [`public/js/traceit-qr-overlay.js`](public/js/traceit-qr-overlay.js) → our service → `GET /api/v1/qr/by-post/{postId}` |
+| **3. On download** | "Save image as…" writes a file with the QR baked into the pixels | [`server/compositor.js`](server/compositor.js) / [`php/framed.php`](php/framed.php) |
+
+**On (2), one thing is not negotiable:** `by-post` authenticates with the `sk_live_…` secret,
+so it is **server-to-server only**. The browser must never hold that key — anyone could read
+it out of the page and mint against your account. So the component calls *our* service by
+article ID, and our service holds the key and calls Trace-It. The page never sees it.
+
 ```bash
 npm install
 npm start          # http://localhost:3000
@@ -335,10 +348,32 @@ $env:TRACEIT_BASE="https://<subdomain>.trace-it.io"
 npm start
 ```
 
-> **The Trace-It API contract in [`server/traceit-client.js`](server/traceit-client.js) is
-> an assumption.** The Trace-It repo is private and could not be read while building this.
-> Every call to Trace-It goes through that one file, so correcting the shapes is a change to
-> that file alone. See REQUIREMENT.md §9 for exactly what to confirm.
+The contract in [`server/traceit-client.js`](server/traceit-client.js) is **verified** —
+read from the Trace-It source and exercised against the live API. See REQUIREMENT.md §9 for
+the confirmed shapes and the four findings that changed the implementation.
+
+```
+POST /api/v1/qr                    { postId, title?, targetUrl? }
+                                   201 created:true (charges 1 quota) / 200 created:false
+GET  /api/v1/qr/by-post/{postId}   never charges quota; qr.png is empty here
+```
+
+Two traps worth knowing:
+
+- **`qr.png` is only populated when `created` is true.** Updates and `by-post` reads return
+  an empty string, because the QR encodes `shortUrl` and that has not changed. Always fall
+  back to the public `qr.pngUrl`.
+- **The branded QR is 1024×1362, not square** — the "Trace-it" label banner makes it taller
+  than wide. The compositor reads the real aspect off the PNG.
+
+> **`by-post` takes the secret key, so it is server-to-server only.** The browser must never
+> hold it. That is why the page calls *our* service and our service calls Trace-It — see
+> "the component fetches the QR" below.
+
+> **Windows PHP gotcha:** a fresh `winget` PHP install ships no CA bundle, so every HTTPS
+> call fails with `unable to get local issuer certificate`. Download
+> [cacert.pem](https://curl.se/ca/cacert.pem) and set `curl.cainfo` and `openssl.cafile` to
+> it in `php.ini`. Do **not** work around it by disabling certificate verification.
 
 ## Environment
 

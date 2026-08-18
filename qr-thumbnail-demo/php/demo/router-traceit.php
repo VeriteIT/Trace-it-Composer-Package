@@ -33,7 +33,18 @@ declare(strict_types=1);
 require_once __DIR__ . '/../traceit-compositor.php';
 require_once __DIR__ . '/qr-store.php';
 
-const ARTICLE_ID_RE = '/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/';
+/*
+ * Article IDs we accept, matching Trace-It's postId rules EXACTLY (see
+ * sanitizePostId in the Trace-It repo, src/lib/api-qr.ts): letters, digits,
+ * underscore and hyphen; must start AND end alphanumeric; 48 characters max.
+ *
+ * Note there is no dot, and the trailing character is constrained. An earlier
+ * revision used [A-Za-z0-9._-]{0,63} which let "108.347979", "trail-" and
+ * 60-character IDs through, so instead of a clean 400 here they reached the
+ * mint path and surfaced as a 502 "mint failed" — a confusing error that blamed
+ * the upstream for our own bad input.
+ */
+const ARTICLE_ID_RE = '/^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,46}[A-Za-z0-9])?$/';
 
 $store = new QrStore();
 
@@ -220,6 +231,15 @@ if ($path === '/v1/hooks/article-published') {
         $extra['imageUrl'] = $imageUrl;
     }
 
+    // Validate the postId shape before minting, so our own bad input is a 400
+    // from us rather than a 502 blaming Trace-It.
+    try {
+        QrStore::normalisePostId($id);
+    } catch (Throwable $e) {
+        send_json(400, ['error' => 'invalid_post_id', 'detail' => $e->getMessage()]);
+        exit;
+    }
+
     $before = $store->get($id);
     try {
         $rec = $store->getOrCreate($id, $dest, $extra);
@@ -233,7 +253,12 @@ if ($path === '/v1/hooks/article-published') {
         'shortUrl'   => $rec['shortUrl'] ?? null,
         'qrId'       => $rec['qrId'] ?? null,
         'source'     => $rec['source'] ?? null,
-        'created'    => $before === null,
+        // Two different facts, deliberately both reported. Reporting only the
+        // second (as an earlier revision did) told the caller "created" every
+        // time our cache was cold, which is exactly the wrong signal for
+        // "did this cost quota?".
+        'created'    => $rec['traceItCreated'] ?? false,  // Trace-It minted; quota charged
+        'newToUs'    => $before === null,                 // our cache had no record
         'qrUrl'      => '/v1/qr/' . rawurlencode($id) . '.png',
         'framedUrl'  => isset($rec['imageUrl']) ? '/v1/framed/' . rawurlencode($id) . '.jpg' : null,
     ]);

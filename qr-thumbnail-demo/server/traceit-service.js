@@ -36,7 +36,7 @@ const path = require('path');
 const express = require('express');
 const store = require('./store');
 const compositor = require('./compositor');
-const { mintQr, MODE } = require('./traceit-client');
+const { mintQr, getQrByArticleId, normalisePostId, MODE } = require('./traceit-client');
 const { imageHostAllowed } = compositor;
 
 const app = express();
@@ -65,9 +65,21 @@ const ALLOW_LAZY_MINT = process.env.ALLOW_LAZY_MINT !== 'false';
 const ARTICLE_URL_TEMPLATE =
   process.env.ARTICLE_URL_TEMPLATE || 'http://localhost:3000/article/{id}';
 
-// Article IDs we are willing to mint for. Deliberately strict: a loose pattern
-// on a lazy-mint endpoint is a quota-burning enumeration target.
-const ARTICLE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/*
+ * Article IDs we accept, matching Trace-It's own postId rules exactly (see
+ * sanitizePostId in the Trace-It repo, src/lib/api-qr.ts): letters, digits,
+ * underscore and hyphen, must start and end alphanumeric, 48 characters max.
+ *
+ * Note there is NO dot. An earlier revision here allowed dots and 64 chars,
+ * which would have let a request through only for Trace-It to reject it with
+ * 400 invalid_post_id — a confusing third-party error for something we can
+ * catch locally. Being strict also matters because this gates a lazy-mint path:
+ * a loose pattern is a quota-burning enumeration target.
+ *
+ * Trace-It lowercases post IDs, so IDs are case-insensitive; normalisePostId()
+ * from the client does that so our cache keys and theirs cannot drift.
+ */
+const ARTICLE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,46}[A-Za-z0-9]$|^[A-Za-z0-9]$/;
 
 /* --- Middleware ---------------------------------------------------------- */
 
@@ -201,7 +213,12 @@ app.post('/v1/hooks/article-published', async (req, res) => {
     const before = store.get(articleId);
     const record = await store.getOrCreate(
       articleId,
-      () => mintQr({ articleId, destinationUrl, title }),
+      async () => {
+        // Same reasoning as resolve(): a free read before a quota-charging write.
+        const found = await getQrByArticleId(articleId);
+        if (found) return found;
+        return mintQr({ articleId, destinationUrl, title });
+      },
       { imageUrl: storedImageUrl }
     );
     res.status(before ? 200 : 201).json({
@@ -209,7 +226,11 @@ app.post('/v1/hooks/article-published', async (req, res) => {
       shortUrl: record.shortUrl,
       qrId: record.qrId,
       source: record.source,
-      created: !before,
+      // Two different facts, deliberately both reported. Reporting only the
+      // second told the caller "created" every time our cache was cold, which is
+      // exactly the wrong signal for "did this cost quota?".
+      created: record.traceItCreated === true, // Trace-It minted; quota charged
+      newToUs: !before, // our cache had no record
       qrUrl: `/v1/qr/${encodeURIComponent(articleId)}.png`,
       framedUrl: record.imageUrl
         ? `/v1/framed/${encodeURIComponent(articleId)}`
@@ -232,9 +253,24 @@ async function resolve(articleId) {
   if (existing) return { record: existing, cached: true };
   if (!ALLOW_LAZY_MINT) return null;
 
-  const record = await store.getOrCreate(articleId, () =>
-    mintQr({ articleId, destinationUrl: articleUrl(articleId), title: null })
-  );
+  const record = await store.getOrCreate(articleId, async () => {
+    /*
+     * Ask Trace-It whether it already has a code for this post BEFORE creating
+     * one. GET /api/v1/qr/by-post/{postId} never charges monthly quota, while
+     * POST /api/v1/qr charges on first create. Our local store is only a cache;
+     * it is empty after a redeploy or a cache wipe, and without this lookup
+     * every such event would re-mint every article and burn quota for codes that
+     * already exist.
+     *
+     * Trace-It's create is idempotent too, so this is belt and braces — but it
+     * is the cheaper belt, and it keeps `created` honest in our own records.
+     */
+    const found = await getQrByArticleId(articleId);
+    if (found) return found;
+
+    return mintQr({ articleId, destinationUrl: articleUrl(articleId), title: null });
+  });
+
   return { record, cached: false };
 }
 
