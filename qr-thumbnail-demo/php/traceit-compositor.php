@@ -28,13 +28,27 @@ declare(strict_types=1);
 function traceit_layout_defaults(): array
 {
     return [
-        'scale'        => 0.28,   // QR width as a fraction of the image's SHORT side
-        'minPx'        => 96,
-        'maxPx'        => 420,
-        'padFrac'      => 0.035,
-        'platePadFrac' => 0.07,
+        'scale'   => 0.28,   // QR width as a fraction of the image's SHORT side
+        'minPx'   => 96,
+        'maxPx'   => 420,
+        'padFrac' => 0.035,
+        'corner'  => 'bottom-right',
+
+        /*
+         * White plate behind the code. OFF by default.
+         *
+         * A Trace-It branded PNG already IS a white rounded card — the code sits
+         * on white, inside its own rounded border, above the label banner. Our own
+         * plate behind that produced a visible second border: a white ring with a
+         * drop shadow around a badge that already had an edge.
+         *
+         * The plate existed for scannability over busy photography, which the
+         * branded PNG covers on its own. Turn it back on only for a bare,
+         * transparent QR with no quiet zone.
+         */
+        'plate'        => false,
+        'platePadFrac' => 0.07, // used only when plate is true
         'radiusFrac'   => 0.06,
-        'corner'       => 'bottom-right',
     ];
 }
 
@@ -140,6 +154,9 @@ function traceit_plan_badge(int $W, int $H, float $qrAspect, array $L = []): arr
 {
     $L = array_merge(traceit_layout_defaults(), $L);
 
+    // With no plate there is no plate padding: the badge box IS the QR box.
+    $platePadFrac = !empty($L['plate']) ? $L['platePadFrac'] : 0.0;
+
     $shortSide = min($W, $H);
     $pad = (int) round($shortSide * $L['padFrac']);
 
@@ -147,8 +164,8 @@ function traceit_plan_badge(int $W, int $H, float $qrAspect, array $L = []): arr
     $qrW = max($L['minPx'], min($L['maxPx'], $qrW));
 
     // The plate is what has to fit, not the QR: it is larger on every side.
-    $plateFactorW = 1 + 2 * $L['platePadFrac'];
-    $plateFactorH = $qrAspect + 2 * $L['platePadFrac'];
+    $plateFactorW = 1 + 2 * $platePadFrac;
+    $plateFactorH = $qrAspect + 2 * $platePadFrac;
 
     $fitW = ($W - 2 * $pad) / $plateFactorW;
     $fitH = ($H - 2 * $pad) / $plateFactorH;
@@ -158,7 +175,7 @@ function traceit_plan_badge(int $W, int $H, float $qrAspect, array $L = []): arr
         return ['fits' => false, 'reason' => "image {$W}x{$H} too small for a scannable code"];
     }
 
-    $platePad = (int) round($qrW * $L['platePadFrac']);
+    $platePad = (int) round($qrW * $platePadFrac);
     $qrH      = (int) round($qrW * $qrAspect);
     $plateW   = $qrW + $platePad * 2;
     $plateH   = $qrH + $platePad * 2;
@@ -175,6 +192,7 @@ function traceit_plan_badge(int $W, int $H, float $qrAspect, array $L = []): arr
 
     return [
         'fits'   => true,
+        'plate'  => !empty($L['plate']),
         'qrW'    => $qrW,    'qrH'    => $qrH,
         'plateW' => $plateW, 'plateH' => $plateH,
         'platePad' => $platePad,
@@ -264,11 +282,14 @@ function traceit_composite(
         return $out;
     }
 
-    // White plate keeps the code scannable over busy photography.
-    $white = imagecolorallocate($photo, 255, 255, 255);
-    traceit_filled_rounded_rect(
-        $photo, $plan['px'], $plan['py'], $plan['plateW'], $plan['plateH'], $plan['radius'], $white
-    );
+    // No plate by default: the branded PNG is already a white rounded card, so a
+    // plate behind it reads as a second border around the badge.
+    if (!empty($plan['plate'])) {
+        $white = imagecolorallocate($photo, 255, 255, 255);
+        traceit_filled_rounded_rect(
+            $photo, $plan['px'], $plan['py'], $plan['plateW'], $plan['plateH'], $plan['radius'], $white
+        );
+    }
 
     // The QR PNG carries an alpha channel; blend it onto the plate rather than
     // replacing pixels, or the transparent quiet zone comes out black.

@@ -116,9 +116,23 @@ const LAYOUT = {
   minPx: 96,        // below this a printed code stops being reliably scannable
   maxPx: 420,
   padFrac: 0.035,   // inset from the image edge, fraction of the short side
-  platePadFrac: 0.07, // white plate padding, fraction of QR width
-  radiusFrac: 0.06,
   corner: 'bottom-right',
+
+  /*
+   * White plate behind the code. OFF by default.
+   *
+   * A Trace-It branded PNG already IS a white rounded card — the code sits on
+   * white, inside its own rounded border, above the label banner. Drawing our own
+   * plate behind that produced a visible second border: a white ring with a drop
+   * shadow around a badge that already had its own edge.
+   *
+   * The plate existed for scannability over busy photography, and the branded PNG
+   * covers that on its own. Turn it back on only for a bare, transparent QR with
+   * no quiet zone of its own.
+   */
+  plate: false,
+  platePadFrac: 0.07, // plate padding, fraction of QR width (used only if plate)
+  radiusFrac: 0.06,
 };
 
 /**
@@ -136,6 +150,8 @@ const LAYOUT = {
  */
 function planBadge(W, H, qrAspect, opts = {}) {
   const L = { ...LAYOUT, ...opts };
+  // With no plate there is no plate padding: the badge box IS the QR box.
+  const platePadFrac = L.plate ? L.platePadFrac : 0;
   const shortSide = Math.min(W, H);
   const pad = Math.round(shortSide * L.padFrac);
 
@@ -145,8 +161,8 @@ function planBadge(W, H, qrAspect, opts = {}) {
 
   // The plate is the thing that has to fit, not the QR: it is larger on
   // every side. Constrain against BOTH axes.
-  const plateFactorW = 1 + 2 * L.platePadFrac;
-  const plateFactorH = qrAspect + 2 * L.platePadFrac;
+  const plateFactorW = 1 + 2 * platePadFrac;
+  const plateFactorH = qrAspect + 2 * platePadFrac;
 
   const fitW = (W - 2 * pad) / plateFactorW;
   const fitH = (H - 2 * pad) / plateFactorH;
@@ -156,7 +172,7 @@ function planBadge(W, H, qrAspect, opts = {}) {
     return { fits: false, reason: `image ${W}x${H} too small for a scannable code` };
   }
 
-  const platePad = Math.round(qrW * L.platePadFrac);
+  const platePad = Math.round(qrW * platePadFrac);
   const qrH = Math.round(qrW * qrAspect);
   const plateW = qrW + platePad * 2;
   const plateH = qrH + platePad * 2;
@@ -172,6 +188,7 @@ function planBadge(W, H, qrAspect, opts = {}) {
 
   return {
     fits: true,
+    plate: L.plate === true,
     qrW, qrH, plateW, plateH, platePad,
     px: pos[0], py: pos[1],
     radius: Math.max(2, Math.round(qrW * L.radiusFrac)),
@@ -261,15 +278,19 @@ async function composite({ imageUrl, qrPngDataUri, layout }) {
     return { buf: encode(), mime, width: W, height: H, badge: false, note: plan.reason };
   }
 
-  ctx.save();
-  ctx.globalAlpha = 0.96;
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(0,0,0,0.30)';
-  ctx.shadowBlur = Math.round(plan.qrW * 0.1);
-  ctx.shadowOffsetY = Math.round(plan.qrW * 0.02);
-  roundedRect(ctx, plan.px, plan.py, plan.plateW, plan.plateH, plan.radius);
-  ctx.fill();
-  ctx.restore();
+  // No plate by default: the branded PNG is already a white rounded card, so a
+  // plate behind it reads as a second border with a shadow around the badge.
+  if (plan.plate) {
+    ctx.save();
+    ctx.globalAlpha = 0.96;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,0.30)';
+    ctx.shadowBlur = Math.round(plan.qrW * 0.1);
+    ctx.shadowOffsetY = Math.round(plan.qrW * 0.02);
+    roundedRect(ctx, plan.px, plan.py, plan.plateW, plan.plateH, plan.radius);
+    ctx.fill();
+    ctx.restore();
+  }
 
   ctx.drawImage(
     qr,
