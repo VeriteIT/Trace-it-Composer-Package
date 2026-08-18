@@ -42,6 +42,61 @@ watch its ID get captured.
 Only the article ID ever crosses the boundary. We never read their database, never touch
 their bucket, and never receive the image itself.
 
+## "Their site is PHP" — what that changes
+
+Nothing on their side, and nothing about whether this works. **All the publisher
+touches is PHP**, and the browser script does not care what generated the HTML.
+
+| Piece | Whose | Language |
+|---|---|---|
+| Capture the article ID at publish | **theirs** | **PHP** — [`php/publish-hook.php`](php/publish-hook.php) |
+| `data-article-id` on the thumbnail | **theirs** | **PHP** — one `htmlspecialchars` echo |
+| The `<script>` tag | **theirs** | one line of HTML |
+| Mint + serve QR codes, composite images | **ours** | Node here, **or PHP** — see below |
+
+The compositing service runs on **our** infrastructure, so its language is our choice,
+not a constraint on them — they never install it. The demo implements it in Node because
+that is what ran in this environment. If the Trace-It platform is PHP, there is a
+complete PHP port:
+
+| Node (demo) | PHP equivalent | Purpose |
+|---|---|---|
+| `GET /v1/framed/:id` | [`php/framed.php`](php/framed.php) | **The QR baked into the pixels** — what makes save-as work |
+| `GET /v1/qr/:id.png` | [`php/qr-proxy.php`](php/qr-proxy.php) | Serve the QR PNG (also usable on their origin, for strict CSP) |
+| `POST /v1/hooks/article-published` | thin wrapper over the Trace-It API | Mint once per article |
+
+`framed.php` is a line-for-line port of `server/compositor.js` — same layout maths, same
+host allowlist, same disk cache, same graceful degradation, same `Content-Disposition`
+filename. It needs only `ext-gd` and `ext-curl`; no framework, no Composer.
+
+**Status of the PHP files** — all six are `php -l` clean on PHP 8.4.24:
+
+| File | State |
+|---|---|
+| `php/framed.php` | **Executed and verified.** Served over `php -S`, output is 1200×800 (identical to source), a QR decodes back out of the delivered JPEG with the same payload the Node version produces, SSRF and bad-id guards both refuse correctly. |
+| `php/publish-hook.php` | Lint clean; not executed — it is a ten-line cURL POST mirroring the verified Node call. |
+| `php/qr-proxy.php` | Lint clean; not executed. |
+| `php/composite.php` | **Superseded by `framed.php`** — kept only for the parked prototype, and has a known placement bug. Do not ship it. |
+
+### Running the PHP side locally
+
+```powershell
+winget install PHP.PHP.8.4          # then enable gd + curl in php.ini
+cd qr-thumbnail-demo/php
+$env:TRACEIT_ALLOWED_IMAGE_HOSTS = "localhost:3001,127.0.0.1:3001"
+$env:TRACEIT_QR_URL_TEMPLATE     = "http://localhost:3002/v1/qr/{id}.png"
+php -S 127.0.0.1:3003
+```
+
+Then compare the two implementations byte for byte against the same source:
+
+```
+http://127.0.0.1:3003/framed.php?id=108-347979&src=http://localhost:3001/media/article-1.jpg
+http://localhost:3002/v1/framed/108-347979.jpg?src=http://localhost:3001/media/article-1.jpg
+```
+
+`php -S` is a single-threaded dev server — fine for this, not for load testing.
+
 ## The integration, in full
 
 **One script tag**, served from our domain:
@@ -80,34 +135,38 @@ traceit_notify_published(                            // the addition
 
 That is the entire publisher-side footprint.
 
-## Two modes: overlay and embed
+## Two modes: embed and overlay
 
 Set `data-mode` per template. Both need nothing from their S3 and no CORS anywhere.
 
-| | `overlay` (default) | `embed` |
+| | `embed` (default) | `overlay` |
 |---|---|---|
-| How | QR is a separate element inside the image frame | QR composited into the pixels by our service; `src` repointed |
-| **"Save image as…" includes the QR** | **No** | **Yes** |
-| Copy image / drag to desktop | No | **Yes** |
+| How | QR composited into the pixels by our service; `src` repointed | QR is a separate element inside the image frame |
+| **"Save image as…" includes the QR** | **Yes** | **No** |
+| Copy image / drag to desktop | **Yes** | No |
 | Print the page | Yes | Yes |
-| `og:image` can carry the QR | No | **Yes** — point the tag at our URL |
-| Image bytes served by | their CDN | **us** |
-| Their photo re-encoded | No | Once |
-| DOM changes | wraps the `<img>`, or uses their frame | **none — only `src`** |
+| `og:image` can carry the QR | **Yes** — point the tag at our URL | No |
+| Image bytes served by | **us** | their CDN |
+| Their photo re-encoded | Once | No |
+| DOM changes | **none — only `src`** | wraps the `<img>`, or uses their frame |
+
+If a composite cannot be produced — our service down, image host not allowlisted — embed
+mode **falls back to drawing an overlay**, so a QR still appears. There is no configuration
+in which the page ends up worse than it started.
 
 ```html
-<!-- article template: readers save and share here, so bake it in -->
-<script src="https://traceit.example.com/js/traceit-qr-overlay.js"
-        data-mode="embed" data-selector="img.story-thumb"></script>
-
-<!-- index template: many thumbnails, nobody is saving — keep their CDN -->
+<!-- default: save-as, copy-image and print all carry the QR -->
 <script src="https://traceit.example.com/js/traceit-qr-overlay.js"
         data-selector="img.story-thumb"></script>
+
+<!-- opt out on heavy index pages, to keep image bytes on their CDN -->
+<script src="https://traceit.example.com/js/traceit-qr-overlay.js"
+        data-mode="overlay" data-selector="img.story-thumb"></script>
 ```
 
-The demo does exactly this. Compare <http://localhost:3000> (overlay — save the photo and
-you get a clean copy) with <http://localhost:3000/article/108-347979> (embed — save it and
-the QR is in the file).
+Compare the two live: <http://localhost:3000> saves with the QR;
+<http://localhost:3000/?mode=overlay> saves a clean copy. Same page, same markup, one
+option different.
 
 ### Why embed needs a server, and why that is still within the constraints
 
@@ -275,14 +334,14 @@ npm start
 | `public/home.html` | Article list — ID from `data-article-id` |
 | `public/article.html` | Single article — ID from the URL |
 | `public/cms.html` | Newsroom: publish an article, watch the ID get captured |
-| `php/publish-hook.php` | **PHP** — the client-side integration, drop into their CMS |
+| `php/publish-hook.php` | **PHP, theirs** — the whole publisher-side integration |
+| `php/framed.php` | **PHP, ours** — compositing endpoint; port of `server/compositor.js` |
 | `php/qr-proxy.php` | **PHP** — optional, serves the QR from their own domain (CSP) |
-| `tools/verify-approaches.js` | Headless proof of every claim above |
+| `tools/verify-approaches.js` | Headless proof of every claim above (55 checks) |
 | `REQUIREMENT.md` | The requirement, constraints and open questions |
 | `README-composite.md` | The earlier bake-into-pixels prototype, and why it is parked |
 
-> The PHP files have **not been executed** — PHP was not available in this environment.
-> They mirror the Node implementations, which are exercised by `npm run verify`. Lint them
-> (`php -l`) against the target PHP version before shipping.
+> All PHP files are `php -l` clean on 8.4.24. `framed.php` is additionally executed and
+> verified — see "Status of the PHP files" above for what is and is not proven per file.
 
 All content is fictional. "Island Chronicle" is not a real publication.

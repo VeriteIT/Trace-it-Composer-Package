@@ -59,22 +59,25 @@
 
   var DEFAULTS = {
     /*
+     * 'embed'    (default) The QR is composited into the image pixels by our
+     *            service and the <img src> is repointed at the result. "Save
+     *            image as…", "Copy image", drag-to-desktop and printing all
+     *            produce the QR-embedded file, because the QR IS the image.
+     *            Cost: the image bytes come from us rather than their CDN, and
+     *            a JPEG source is re-encoded once.
+     *
      * 'overlay'  The QR is a separate element positioned over the photo. Their
      *            image still comes from their own CDN and we serve no image
-     *            bytes. But the QR is NOT in the file, so "Save image as…"
-     *            gives the clean photo.
+     *            bytes at all. But the QR is not part of the file, so "Save
+     *            image as…" gives the clean photo. Use this on index and list
+     *            pages, where there are many thumbnails and nobody is saving.
      *
-     * 'embed'    The QR is composited into the image pixels by our service and
-     *            the <img src> is repointed at the result. "Save image as…",
-     *            "Copy image", drag-to-desktop and printing all produce the
-     *            QR-embedded file, because the QR IS the image. Costs: the
-     *            bytes come from us rather than their CDN.
-     *
-     * Embed degrades safely — the S3 photo stays on screen and is only replaced
-     * once the composite has actually loaded, so if our service is slow or down
-     * the reader still sees the article photo.
+     * Embed degrades twice over, so there is no configuration in which the page
+     * gets worse than it started: the S3 photo stays on screen until the
+     * composite has actually loaded, and if the composite cannot be produced at
+     * all the script falls back to drawing an overlay badge instead.
      */
-    mode: 'overlay',
+    mode: 'embed',
 
     // Which images to decorate.
     selector: 'img[data-article-id]',
@@ -100,6 +103,11 @@
     minPx: 48,
     maxPx: 160,
     padPct: 3.5,
+
+    // Embed mode only: QR width as a fraction of the SOURCE image's short side.
+    // Deliberately separate from sizePct, which is a percentage of the displayed
+    // frame — the two are measured against different things. null = server default.
+    embedScale: null,
 
     // White plate behind the code, so it stays scannable over busy photography.
     plate: true,
@@ -324,8 +332,21 @@
    */
   function framedUrl(articleId, photoUrl, opts) {
     var u = serviceBase(opts) + '/v1/framed/' + encodeURIComponent(articleId) + '.jpg';
-    if (photoUrl) u += '?src=' + encodeURIComponent(photoUrl);
-    return u;
+    var q = [];
+    if (photoUrl) q.push('src=' + encodeURIComponent(photoUrl));
+
+    // `corner` means exactly the same thing on both sides, so it forwards.
+    if (opts.corner) q.push('corner=' + encodeURIComponent(opts.corner));
+
+    // Size does NOT forward. The overlay's sizePct/minPx/maxPx are in CSS pixels
+    // against the DISPLAYED frame; the composite is built in SOURCE pixels at
+    // native resolution, so a 300px-wide thumbnail of a 1200px photo makes the
+    // same number mean four different things. `embedScale` is the separate,
+    // honestly-named knob for the server side: a fraction of the source image's
+    // short side. Left unset, the server default applies.
+    if (opts.embedScale) q.push('scale=' + encodeURIComponent(opts.embedScale));
+
+    return q.length ? u + '?' + q.join('&') : u;
   }
 
   /**
@@ -409,8 +430,22 @@
 
     img.setAttribute(ATTR_STATE, 'pending');
 
-    if (opts.mode === 'embed') return embed(img, articleId, opts);
+    if (opts.mode === 'embed') {
+      // Fall back to an overlay if the composite cannot be produced — a
+      // misconfigured image-host allowlist, our service down, an image host we
+      // do not know. Better a QR the reader can still scan than no QR at all.
+      return embed(img, articleId, opts).then(function (result) {
+        if (result) return result;
+        img.setAttribute(ATTR_STATE, 'pending');
+        return overlayBadge(img, articleId, opts);
+      });
+    }
 
+    return overlayBadge(img, articleId, opts);
+  }
+
+  /** The overlay path: a QR badge positioned inside the image frame. */
+  function overlayBadge(img, articleId, opts) {
     var url = qrUrl(articleId, opts);
     if (!pending[url]) {
       // Drop the memo if the load fails, or a transient outage would poison the
@@ -589,7 +624,7 @@
   }
 
   var NUMERIC = { sizePct: 1, minPx: 1, maxPx: 1, padPct: 1, platePadPct: 1,
-                  radiusPx: 1, minFrameWidth: 1, fadeMs: 1 };
+                  radiusPx: 1, minFrameWidth: 1, fadeMs: 1, embedScale: 1 };
 
   function optionsFromScript(el) {
     if (!el) return {};
@@ -600,6 +635,7 @@
       selector: 'selector', frameSelector: 'frame', service: 'service',
       idAttr: 'idAttr', idFromPath: 'idFromPath', corner: 'corner',
       sizePct: 'size', minPx: 'min', maxPx: 'max', padPct: 'pad',
+      embedScale: 'embedScale',
       platePadPct: 'platePad', radiusPx: 'radius',
       minFrameWidth: 'minFrame', fadeMs: 'fade'
     };

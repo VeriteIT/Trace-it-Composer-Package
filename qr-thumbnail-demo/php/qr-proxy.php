@@ -24,8 +24,9 @@
  * Requires: ext-curl.
  *
  * ---------------------------------------------------------------------------
- * NOT EXECUTED. PHP was not available where this demo was built. It mirrors the
- * behaviour of the verified Node endpoint. Lint with `php -l` before shipping.
+ * `php -l` CLEAN on PHP 8.4.24, but not executed here — it is an optional cache
+ * in front of the verified Node endpoint, whose behaviour it mirrors. Re-lint
+ * against the target PHP version before shipping.
  * ---------------------------------------------------------------------------
  */
 

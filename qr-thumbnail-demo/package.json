@@ -10,6 +10,7 @@
     "s3": "node server/fake-s3.js",
     "traceit": "node server/traceit-service.js",
     "verify": "node tools/verify-approaches.js",
+    "lint:php": "node -e \"const{execFileSync}=require('child_process'),fs=require('fs');let bad=0;for(const f of fs.readdirSync('php').filter(f=>f.endsWith('.php'))){try{execFileSync('php',['-l','php/'+f],{stdio:'pipe'});console.log('  ok   '+f)}catch(e){bad++;console.log('  FAIL '+f);console.log(String(e.stdout||e.message))}}process.exit(bad?1:0)\"",
     "reset": "node -e \"require('fs').rmSync('data',{recursive:true,force:true});console.log('demo data cleared')\"",
     "thumbs": "node tools/make-thumbnails.js",
     "start:composite": "node server/index.js",

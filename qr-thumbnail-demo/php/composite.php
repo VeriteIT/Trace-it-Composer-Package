@@ -1,6 +1,25 @@
 <?php
 /**
- * composite.php — server-side compositing with GD.
+ * composite.php — SUPERSEDED. Use framed.php instead.
+ * ===========================================================================
+ * This belongs to the parked first prototype (see README-composite.md).
+ * php/framed.php does the same job and is the one to deploy, because this file
+ * has two known defects that were fixed there:
+ *
+ *   1. BADGE PLACEMENT BUG. The minimum-size floor is applied before a clamp
+ *      that checks WIDTH only, and nothing constrains height. On a wide short
+ *      thumbnail the badge lands off the top edge — a 400x120 photo puts it at
+ *      y = -62 and the code is silently clipped to something unscannable.
+ *   2. No SSRF allowlist on the QR fetch path, no source size cap, and it
+ *      always re-encodes to JPEG even when the source is a lossless PNG.
+ *
+ * Kept only so the parked prototype still reads as a complete thing. Do not
+ * ship it.
+ * ===========================================================================
+ *
+ * Original description follows.
+ *
+ * server-side compositing with GD.
  *
  * The frontend approach (canvas in the browser) and this one produce the same
  * image. The difference is where the work happens, and that difference matters:

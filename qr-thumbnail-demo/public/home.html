@@ -58,9 +58,9 @@
 
       <p class="reader-hint">
         <i class="fa-solid fa-circle-info"></i>
-        Each thumbnail below has a Trace-It QR code inside its frame. The photo
-        itself came from the S3 origin untouched — scan a code with your phone and
-        it opens that article.
+        Right-click any photo below and choose <strong>“Save image as…”</strong> —
+        the downloaded file has the QR code in it. Scan it with your phone and it
+        opens that article.
       </p>
 
       <div id="stories"></div>
@@ -77,12 +77,26 @@
           <li>On the page, our script reads <code>data-article-id</code> from the thumbnail.</li>
           <li>It requests <code>/v1/qr/&lt;id&gt;.png</code> from us and places it in the image frame.</li>
         </ol>
+        <h3 class="rail-title mt-4">Compare the two modes</h3>
+        <p class="rail-note mb-2" id="modeNote"></p>
+        <div class="d-grid gap-2">
+          <a class="btn btn-sm btn-outline-dark" id="modeToggle" href="?mode=overlay"></a>
+        </div>
+        <p class="rail-note mt-2 mb-0 small">
+          <strong>embed</strong> — our service composites the QR into the pixels, so
+          save-as, copy-image and print all carry the code.<br>
+          <strong>overlay</strong> — the QR sits on top as a separate element. Their
+          CDN still serves the photo and we send no image bytes, but save-as gives a
+          clean copy.
+        </p>
+
         <h3 class="rail-title mt-4">No CORS anywhere</h3>
         <p class="rail-note">
-          The photo is never read pixel-by-pixel, so the S3 bucket needs no
-          <code>Access-Control-Allow-Origin</code> header. Check the network tab:
-          the image request is a plain cross-origin GET.
+          Nothing in the browser ever reads the photo's pixels, so the S3 bucket needs
+          no <code>Access-Control-Allow-Origin</code> header in either mode. The
+          compositing happens on our server, where same-origin policy does not apply.
         </p>
+
         <h3 class="rail-title mt-4">Try it</h3>
         <p class="rail-note mb-2">
           Publish a new article and watch a code appear for it.
@@ -141,7 +155,31 @@ $(function () {
   function time(iso) {
     return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
+
+  // Mode switcher for the demo. A real deployment just sets data-mode.
+  var overlayMode = new URLSearchParams(location.search).get('mode') === 'overlay';
+  $('#modeNote').html(overlayMode
+    ? 'Currently <strong>overlay</strong> mode — a save-as here gives the clean photo, with no code.'
+    : 'Currently <strong>embed</strong> mode — a save-as here gives the QR-embedded file.');
+  $('#modeToggle')
+    .attr('href', overlayMode ? '/' : '?mode=overlay')
+    .html(overlayMode
+      ? '<i class="fa-solid fa-arrow-right"></i> Switch to embed mode'
+      : '<i class="fa-solid fa-arrow-right"></i> Switch to overlay mode');
 });
+</script>
+
+<!--
+  Demo-only: lets you flip modes from the URL to compare them side by side.
+  ?mode=overlay  →  QR drawn on top; save-as gives the clean photo
+  (default)      →  QR baked into the pixels; save-as gives the QR-embedded file
+  A real deployment just sets data-mode on the tag below.
+-->
+<script>
+  window.TraceItQROverlayConfig = {
+    mode: new URLSearchParams(location.search).get('mode') === 'overlay'
+      ? 'overlay' : 'embed'
+  };
 </script>
 
 <!--
@@ -149,16 +187,13 @@ $(function () {
   THE ENTIRE INTEGRATION — one tag, pointing at our service.
 
   The script derives its own API base from this src, finds every matching
-  thumbnail, reads data-article-id, and drops the QR into the image frame.
+  thumbnail, reads data-article-id, and puts the QR on the image frame.
   Thumbnails rendered later by jQuery (as above) or by AJAX/infinite scroll are
   picked up automatically via MutationObserver.
   ===========================================================================
 -->
 <script src="http://localhost:3002/js/traceit-qr-overlay.js"
         data-selector="img.story-thumb"
-        data-corner="bottom-right"
-        data-size="26"
-        data-min="52"
-        data-max="150"></script>
+        data-corner="bottom-right"></script>
 </body>
 </html>
