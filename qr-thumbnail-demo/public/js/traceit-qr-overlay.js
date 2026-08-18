@@ -52,6 +52,19 @@
   'use strict';
 
   var NS = 'tqr';
+
+  /*
+   * Badge design version, appended to the composite URL as ?v=.
+   *
+   * BUMP THIS whenever the composited badge changes — size, corner, plate,
+   * padding, anything visual. The composite is served `immutable` with a
+   * one-year max-age, which is right for a file that never changes, but it means
+   * a browser that has fetched /v1/framed/<id>.jpg will never ask again. Without
+   * a version in the URL, a design change is invisible to every reader who has
+   * already loaded the page — and to you, which is how "the border is back"
+   * happens after the server has already stopped drawing one.
+   */
+  var BADGE_VERSION = '2';
   var ATTR_EL = 'data-tqr-el'; // marks elements WE created, so we ignore our own mutations
   var ATTR_STATE = 'data-tqr-state';
   var ATTR_STYLE0 = 'data-tqr-style0'; // the image's original inline style, verbatim
@@ -355,6 +368,10 @@
     // honestly-named knob for the server side: a fraction of the source image's
     // short side. Left unset, the server default applies.
     if (opts.embedScale) q.push('scale=' + encodeURIComponent(opts.embedScale));
+
+    // Cache buster — see BADGE_VERSION. Without it the immutable composite is
+    // pinned in every browser that has loaded it once.
+    q.push('v=' + encodeURIComponent(BADGE_VERSION));
 
     return q.length ? u + '?' + q.join('&') : u;
   }
