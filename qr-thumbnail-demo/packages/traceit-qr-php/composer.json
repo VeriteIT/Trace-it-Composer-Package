@@ -1,0 +1,25 @@
+{
+  "name": "veriteit/trace-it-qr",
+  "description": "Put a Trace-It QR code on your article thumbnails from the article ID alone. Publish-time registration, on-page rendering, and optional server-side compositing so Save-as includes the code.",
+  "type": "library",
+  "license": "proprietary",
+  "keywords": ["qr", "trace-it", "cms", "newsroom", "attribution"],
+  "homepage": "https://trace-it.io",
+  "require": {
+    "php": ">=8.1",
+    "ext-curl": "*",
+    "ext-json": "*"
+  },
+  "suggest": {
+    "ext-gd": "Required only for server-side compositing (Compositor / framedImage). Not needed for overlay mode."
+  },
+  "autoload": {
+    "psr-4": {
+      "VeriteIt\\TraceItQr\\": "src/"
+    }
+  },
+  "config": {
+    "sort-packages": true
+  },
+  "minimum-stability": "stable"
+}
