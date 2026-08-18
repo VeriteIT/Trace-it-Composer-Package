@@ -206,6 +206,24 @@ Errors   { error: { code, message } }
    "Trace-it" label banner. Anything assuming a square badge will distort it — the
    compositor derives aspect from the loaded PNG and constrains both axes.
 
+### `targetUrl` must be https
+
+Trace-It rejects any other scheme with `400 invalid_target_url`. The field is optional
+though — omit it and the landing page shows branding, the verification statement and the
+published date, with no "Original Source" button.
+
+So a non-https URL is a reason to **drop the field, not fail the mint**: the QR still works
+and still tracks, because it encodes `shortUrl`, not `targetUrl`. Both implementations do
+that and log why.
+
+This only bites in development, where the demo runs on `http://localhost`. Production
+article URLs are https and pass through normally.
+
+> Worth knowing: this rule arrived in the most recent commit to `src/lib/api-qr.ts`
+> (`9429469 Validate targetUrl and titles`). An `http` targetUrl was accepted by the live
+> service earlier the same day and rejected after a deploy landed mid-testing — so pin
+> expectations to the source, not to a response you got once.
+
 ### `postId` rules, enforced identically on our side
 
 Letters, digits, underscore, hyphen; must start **and end** alphanumeric; lowercased, so

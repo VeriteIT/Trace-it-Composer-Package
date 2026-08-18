@@ -285,8 +285,28 @@ final class QrStore
         if ($title) {
             $body['title'] = $title;
         }
+        /*
+         * targetUrl MUST be https — Trace-It rejects anything else with
+         * 400 invalid_target_url (normaliseTargetUrl in src/lib/api-qr.ts).
+         *
+         * It is also optional: omit it and the landing page shows branding, the
+         * verification statement and the published date, with no "Original
+         * Source" button. So an http URL is a reason to drop the field, not to
+         * fail the mint — the QR still works and still tracks, because it encodes
+         * shortUrl, not targetUrl.
+         *
+         * This mainly bites in development: the demo runs on http://localhost.
+         * Production article URLs are https, where the field passes normally.
+         */
         if ($destinationUrl) {
-            $body['targetUrl'] = $destinationUrl;
+            if (stripos($destinationUrl, 'https:') === 0) {
+                $body['targetUrl'] = $destinationUrl;
+            } else {
+                error_log(
+                    '[traceit] targetUrl "' . $destinationUrl . '" is not https; Trace-It only '
+                    . 'accepts https, so it is being omitted. The QR still works and still tracks.'
+                );
+            }
         }
         if ($folder = (getenv('TRACEIT_FOLDER') ?: 'Newsroom thumbnails')) {
             $body['folder'] = $folder;

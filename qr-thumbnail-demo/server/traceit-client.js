@@ -238,7 +238,32 @@ async function mintQr({ articleId, destinationUrl, title, followUpPages }) {
   // Only send fields we actually have: Trace-It treats a present key as an
   // update, so sending title: undefined would blank a title set earlier.
   if (title) body.title = title;
-  if (destinationUrl) body.targetUrl = destinationUrl;
+
+  /*
+   * targetUrl MUST be https — Trace-It rejects anything else with
+   * 400 invalid_target_url (see normaliseTargetUrl in src/lib/api-qr.ts).
+   *
+   * It is also optional: omit it and the landing page shows branding, the
+   * verification statement and the published date, with no "Original Source"
+   * button. So an http URL is a reason to drop the field, not to fail the mint —
+   * the QR still works, because it encodes shortUrl, not targetUrl.
+   *
+   * This matters mainly in development: the demo runs on http://localhost, so
+   * live mode here mints codes with no target. Production article URLs are https,
+   * where the field goes through normally.
+   */
+  if (destinationUrl) {
+    if (/^https:/i.test(destinationUrl)) {
+      body.targetUrl = destinationUrl;
+    } else {
+      console.warn(
+        `  [traceit] targetUrl "${destinationUrl}" is not https — Trace-It only accepts\n` +
+          '            https, so it is being omitted. The QR still works and still\n' +
+          '            tracks; the landing page just has no "Original Source" button.'
+      );
+    }
+  }
+
   if (TRACEIT_FOLDER) body.folder = TRACEIT_FOLDER;
   if (Array.isArray(followUpPages) && followUpPages.length) body.followUpPages = followUpPages;
 
