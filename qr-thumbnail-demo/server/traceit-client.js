@@ -211,10 +211,12 @@ async function toRecord(payload) {
  * @param {string} [a.destinationUrl] Becomes targetUrl: the "Original Source"
  *                                    button on the Trace-It landing page. The QR
  *                                    itself always encodes shortUrl, not this.
- * @param {string} [a.title]
  * @param {string[]} [a.followUpPages]
+ *
+ * Note there is no `title` parameter: the Trace-It title is always the post ID.
+ * See the body construction below for why.
  */
-async function mintQr({ articleId, destinationUrl, title, followUpPages }) {
+async function mintQr({ articleId, destinationUrl, followUpPages }) {
   const id = normalisePostId(articleId);
   if (!id.ok) throw new Error(id.reason);
 
@@ -234,10 +236,20 @@ async function mintQr({ articleId, destinationUrl, title, followUpPages }) {
     };
   }
 
-  const body = { postId: id.postId };
-  // Only send fields we actually have: Trace-It treats a present key as an
-  // update, so sending title: undefined would blank a title set earlier.
-  if (title) body.title = title;
+  /*
+   * `title` is the POST ID, not the headline.
+   *
+   * It is what names the code in the Trace-It dashboard, and naming by post ID
+   * means a row there maps to a CMS post without anyone having to match wording.
+   * Headlines also get edited after publishing, and Trace-It treats a present
+   * `title` as an update, so sending the headline would rewrite the name on every
+   * re-publish. The post ID never changes.
+   *
+   * Left unsent, Trace-It derives a title from the target URL's host or falls
+   * back to "Post <postId>" — close to this, but not stable when targetUrl is
+   * present. Sending it explicitly is deterministic.
+   */
+  const body = { postId: id.postId, title: id.postId };
 
   /*
    * targetUrl MUST be https — Trace-It rejects anything else with

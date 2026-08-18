@@ -15,7 +15,7 @@
  * Two ways in, matching the two ways an article ID can reach us:
  *
  *   PATH A (preferred) — publish-time webhook
- *     POST /v1/hooks/article-published  { articleId, url, title, imageUrl }
+ *     POST /v1/hooks/article-published  { articleId, url, imageUrl? }
  *     Authorization: Bearer <TRACEIT_WEBHOOK_SECRET>
  *     One mint per article, at a predictable time, authenticated.
  *
@@ -226,7 +226,9 @@ if ($path === '/v1/hooks/article-published') {
 
     // Only needed for embed mode. Same public URL every reader already fetches.
     $imageUrl = (string) ($in['imageUrl'] ?? '');
-    $extra = ['title' => $in['title'] ?? null];
+    // No title is forwarded: Trace-It names the code by post ID. A headline
+    // here would be accepted and discarded. See qr-store.php.
+    $extra = [];
     if ($imageUrl !== '' && traceit_image_host_allowed($imageUrl)) {
         $extra['imageUrl'] = $imageUrl;
     }

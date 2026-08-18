@@ -107,7 +107,7 @@ final class QrStore
     /**
      * Returns the record for an article, minting on first request only.
      *
-     * @param  array{imageUrl?:string,title?:string} $extra
+     * @param  array{imageUrl?:string} $extra
      * @return array<string,mixed>
      * @throws RuntimeException if minting fails
      */
@@ -141,7 +141,7 @@ final class QrStore
                 return $again;
             }
 
-            $minted = $this->mint($articleId, $destinationUrl, $extra['title'] ?? null);
+            $minted = $this->mint($articleId, $destinationUrl);
 
             $record = [
                 'articleId' => $articleId,
@@ -228,7 +228,8 @@ final class QrStore
         return !in_array($host, self::PLACEHOLDER_HOSTS, true);
     }
 
-    private function mint(string $articleId, string $destinationUrl, ?string $title): array
+    /** No $title parameter: the Trace-It title is always the post ID. */
+    private function mint(string $articleId, string $destinationUrl): array
     {
         $key  = getenv('TRACEIT_API_KEY') ?: '';
         $base = rtrim(getenv('TRACEIT_BASE') ?: 'https://demo.trace-it.io', '/');
@@ -279,12 +280,20 @@ final class QrStore
             return $existing;
         }
 
-        $body = ['postId' => $postId];
-        // Only send fields we have: Trace-It treats a present key as an update,
-        // so sending an empty title would blank a title set earlier.
-        if ($title) {
-            $body['title'] = $title;
-        }
+        /*
+         * `title` is the POST ID, not the headline.
+         *
+         * It is what names the code in the Trace-It dashboard, and naming by post
+         * ID means a row there maps to a CMS post without anyone matching wording.
+         * Headlines also get edited after publishing, and Trace-It treats a
+         * present `title` as an update, so sending the headline would rewrite the
+         * name on every re-publish. The post ID never changes.
+         *
+         * Left unsent, Trace-It derives a title from the target URL's host or
+         * falls back to "Post <postId>" — close, but not stable once targetUrl is
+         * present. Sending it explicitly is deterministic.
+         */
+        $body = ['postId' => $postId, 'title' => $postId];
         /*
          * targetUrl MUST be https — Trace-It rejects anything else with
          * 400 invalid_target_url (normaliseTargetUrl in src/lib/api-qr.ts).
