@@ -78,24 +78,60 @@ filename. It needs only `ext-gd` and `ext-curl`; no framework, no Composer.
 | `php/qr-proxy.php` | Lint clean; not executed. |
 | `php/composite.php` | **Superseded by `framed.php`** — kept only for the parked prototype, and has a known placement bug. Do not ship it. |
 
-### Running the PHP side locally
+### Running the whole demo on PHP, with no Node at all
 
 ```powershell
-winget install PHP.PHP.8.4          # then enable gd + curl in php.ini
+winget install PHP.PHP.8.4                  # then enable gd + curl in php.ini
+cd qr-thumbnail-demo
+php ../.tools/composer.phar install -d php  # demo-only, for local QR generation
+.\php\demo\start-all.ps1                    # all three origins
+.\php\demo\start-all.ps1 -Stop              # shut them down
+```
+
+Same three origins, same URLs, same behaviour — `/v1/health` reports `"impl":"php"`.
+Verified running: publish → webhook → mint → composite → a QR decoding back out of the
+delivered JPEG at 1200×800.
+
+| File | Role |
+|---|---|
+| `php/demo/router-publisher.php` | :3000 — their CMS and article pages |
+| `php/demo/router-s3.php` | :3001 — their images, no CORS |
+| `php/demo/router-traceit.php` | :3002 — our service: mint, serve, composite |
+| `php/demo/qr-store.php` | articleId → QR, held on our side |
+| `php/demo/start-all.ps1` | launcher; loads `.env`, waits for health |
+
+Two things about this layer specifically:
+
+- **Composer appears only here.** It is used for local QR generation so the demo works
+  offline without an API key. In production our service calls the Trace-It API instead.
+  The drop-in integration files — `publish-hook.php`, `framed.php`, `traceit-compositor.php`,
+  `qr-proxy.php` — have **no dependencies** beyond `ext-gd` and `ext-curl`.
+- **`php -S` is a single-threaded dev server.** Fine for this; do not load-test with it.
+  It is also why `router-traceit.php` composites in-process via `traceit-compositor.php`
+  rather than HTTP-fetching its own `/v1/qr` endpoint — a self-request on a single-threaded
+  server deadlocks.
+
+To run just the compositing endpoint standalone, without the demo layer:
+
+```powershell
 cd qr-thumbnail-demo/php
 $env:TRACEIT_ALLOWED_IMAGE_HOSTS = "localhost:3001,127.0.0.1:3001"
 $env:TRACEIT_QR_URL_TEMPLATE     = "http://localhost:3002/v1/qr/{id}.png"
 php -S 127.0.0.1:3003
+# http://127.0.0.1:3003/framed.php?id=<id>&src=<public image url>
 ```
 
-Then compare the two implementations byte for byte against the same source:
+### Secrets
 
-```
-http://127.0.0.1:3003/framed.php?id=108-347979&src=http://localhost:3001/media/article-1.jpg
-http://localhost:3002/v1/framed/108-347979.jpg?src=http://localhost:3001/media/article-1.jpg
-```
+`.env` is gitignored and is where a real key belongs; `start-all.ps1` loads it. **Never put
+a key in `.env.example`** — that file is tracked, so a key written there lands in git
+history on the next commit.
 
-`php -S` is a single-threaded dev server — fine for this, not for load testing.
+Both implementations refuse to send an API key to a placeholder host (`demo.trace-it.io`,
+`traceit.example.com`, …) and fall back to local generation with a warning. The
+`Authorization` header goes out on the very first request, so a guessed hostname would hand
+the credential to whoever owns that domain before any response could reveal the mistake.
+Set `TRACEIT_BASE` to the real host to enable live minting.
 
 ## The integration, in full
 

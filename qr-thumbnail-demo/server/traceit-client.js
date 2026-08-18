@@ -40,7 +40,43 @@ const TRACEIT_BASE = process.env.TRACEIT_BASE || 'https://demo.trace-it.io';
 const TRACEIT_KEY = process.env.TRACEIT_API_KEY || '';
 const TRACEIT_FOLDER = process.env.TRACEIT_FOLDER || 'Newsroom thumbnails';
 
-const MODE = TRACEIT_KEY ? 'live' : 'local';
+/*
+ * Hostnames that ship as placeholders in this repo. A bearer token must never be
+ * sent to one of them: they are not known to belong to Trace-It, and the
+ * Authorization header goes out on the very first request — before any response
+ * could tell us we guessed wrong. Handing a live credential to whoever happens
+ * to own a guessed domain is not a recoverable mistake.
+ */
+const PLACEHOLDER_HOSTS = new Set([
+  'demo.trace-it.io',
+  'your-subdomain.trace-it.io',
+  'traceit.example.com',
+  'example.com',
+]);
+
+function baseIsConfigured(base) {
+  try {
+    const host = new URL(base).hostname.toLowerCase();
+    if (!host || host.includes('<') || host.includes('>')) return false;
+    return !PLACEHOLDER_HOSTS.has(host);
+  } catch {
+    return false;
+  }
+}
+
+const BASE_OK = baseIsConfigured(TRACEIT_BASE);
+
+// A key against a placeholder base is treated as "no key": generate locally
+// rather than send the credential somewhere unverified.
+const MODE = TRACEIT_KEY && BASE_OK ? 'live' : 'local';
+
+if (TRACEIT_KEY && !BASE_OK) {
+  console.warn(
+    `\n  [traceit] TRACEIT_API_KEY is set but TRACEIT_BASE is "${TRACEIT_BASE}", which is a\n` +
+      '            placeholder. Refusing to send the key there. Set TRACEIT_BASE to the real\n' +
+      '            Trace-It host to enable live minting; generating QR codes locally for now.\n'
+  );
+}
 
 /** Quiet zone matters: a QR with no margin is much harder for phones to lock on. */
 const LOCAL_QR_OPTS = {
