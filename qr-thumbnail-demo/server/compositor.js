@@ -305,10 +305,19 @@ async function composite({ imageUrl, qrPngDataUri, layout }) {
 
 /* --- disk cache ---------------------------------------------------------- */
 
-function cacheKey(articleId, imageUrl) {
+function cacheKey(articleId, imageUrl, layout = {}, version = '0') {
+  // Layout and badge version belong in the key. Without them, changing the badge
+  // design serves the previous render back from disk forever.
+  const sig = [
+    layout.corner ?? 'd',
+    layout.scale ?? 'd',
+    layout.plate === true ? 'plate' : 'noplate',
+    version,
+  ].join('|');
+
   return require('crypto')
     .createHash('sha256')
-    .update(`${articleId}|${imageUrl}`)
+    .update(`${articleId}|${imageUrl}|${sig}`)
     .digest('hex');
 }
 
@@ -341,8 +350,8 @@ function cacheWrite(key, { buf, mime, width, height, badge }) {
 /** Deduplicates concurrent composites of the same key. */
 const inFlight = new Map();
 
-async function compositeCached({ articleId, imageUrl, qrPngDataUri, layout }) {
-  const key = cacheKey(articleId, imageUrl);
+async function compositeCached({ articleId, imageUrl, qrPngDataUri, layout, version }) {
+  const key = cacheKey(articleId, imageUrl, layout, version);
 
   const hit = cacheRead(key);
   if (hit) return { ...hit, cached: true };

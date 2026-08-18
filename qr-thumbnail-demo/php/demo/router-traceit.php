@@ -319,8 +319,14 @@ if (preg_match('#^/v1/framed/([^/]+?)(?:\.(?:jpe?g|png))?$#', $path, $m)) {
     if (!is_dir($cacheDir)) {
         @mkdir($cacheDir, 0770, true);
     }
+    // The badge-design version from the client (see BADGE_VERSION in
+    // traceit-qr-overlay.js) is part of the key, so bumping it produces a new
+    // URL AND a new cache entry rather than serving the previous design.
     $ck = hash('sha256', implode('|', [
-        $id, $imageUrl, $layout['corner'] ?? 'd', (string) ($layout['scale'] ?? 'd'),
+        $id, $imageUrl,
+        $layout['corner'] ?? 'd',
+        (string) ($layout['scale'] ?? 'd'),
+        (string) ($_GET['v'] ?? '0'),
     ]));
     $binF  = $cacheDir . '/' . $ck . '.bin';
     $mimeF = $cacheDir . '/' . $ck . '.mime';

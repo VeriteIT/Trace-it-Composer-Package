@@ -391,6 +391,10 @@ app.get('/v1/framed/:articleId', rateLimit(240, 60_000), async (req, res) => {
       imageUrl: String(imageUrl),
       qrPngDataUri: record.pngDataUri,
       layout: layoutFromQuery(req.query),
+      // Badge-design version from the client (BADGE_VERSION in the overlay
+      // script). Part of the cache key so a bump yields a new URL AND a new
+      // cache entry, instead of serving the previous design back.
+      version: String(req.query.v || '0'),
     });
 
     const ext = out.mime === 'image/png' ? 'png' : 'jpg';
