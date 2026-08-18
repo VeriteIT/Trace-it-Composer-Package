@@ -155,20 +155,71 @@ will accept — see §8.
 4. **Where should the QR sit, and how large?** Currently bottom-right at 26% of the
    thumbnail width. Corner, size, and padding are all configurable per deployment.
 
-## 9. Unverified assumption
+## 9. The Trace-It API — verified
 
-**The Trace-It API contract in `server/traceit-client.js` is a guess.** The Trace-It
-repo is private and could not be read while building this, so the request and response
-shapes for minting a code were assumed. Every Trace-It call goes through that one file,
-so correcting it is a change to that file alone.
+Earlier revisions of this document flagged the API contract as an assumption. **It is now
+verified**, both by reading the Trace-It source and by calling the live API.
 
-Confirm before showing this to the client:
+```
+Base    https://<tenant-subdomain>.trace-it.io      (functionally any host serving
+                                                     the app; auth is by key, and
+                                                     shortUrl comes from the owner's
+                                                     metadata, not the request host)
+Auth    Authorization: Bearer sk_live_…
 
-- Endpoint and method for creating a code (assumed `POST /api/v1/qr`)
-- Auth scheme (assumed `Authorization: Bearer <key>`)
-- Response field holding the PNG (assumed `qr.png` as a base64 data URI)
-- Whether a code can carry an external reference such as the publisher's article ID
-- Whether a code can be looked up by that reference
+POST /api/v1/qr          { postId, title?, targetUrl?, folder?, followUpPages? }
+                         -> 201 { …, created: true }   first publish, charges 1 quota
+                         -> 200 { …, created: false }  repeat, charges nothing
+GET  /api/v1/qr/by-post/{postId}
+                         -> 200 { …, qr: { pngUrl, png: '' } }   never charges quota
+                         -> 404 { error: { code: 'not_found' } }
 
-Without an API key the demo generates real, scannable QR codes locally, so the
-integration is fully testable offline — those codes are not tracked links.
+Response { id, postId, shortUrl, title, folder, targetUrl, followUpPages,
+           type: 'verified_content', createdAt, qr: { pngUrl, png } }
+Errors   { error: { code, message } }
+```
+
+**Confirmed live** against `https://www.trace-it.io` with the production key:
+
+| Check | Result |
+|---|---|
+| Unauthenticated POST | `401 unauthorized` in Trace-It's own error shape |
+| Create | `201`, `created: true` |
+| Repeat same `postId` | `200`, `created: false`, same id, **no quota** |
+| `by-post` lookup | `200`, `created` absent, `qr.png` **empty** |
+| Invalid `postId` (`a/b`) | `400 invalid_post_id` |
+| `qr.pngUrl` with no auth header | `200 image/png` — genuinely public |
+| Decoded QR | `https://test.trace-it.io/ub112dec4-qrdemo-verify-1` |
+
+### Four things that changed the implementation
+
+1. **The request body was wrong.** It sent `sourceUrls` / `name` / `reference` — none of
+   which exist. The real fields are `postId` and `targetUrl`. It would have 400'd on every
+   call.
+2. **`qr.png` is populated only when `created` is true.** An update or a `by-post` read
+   returns an empty string, because the QR encodes `shortUrl` and that has not changed.
+   Code that assumes it is always present works on first publish and breaks on the second.
+   Always fall back to `qr.pngUrl`.
+3. **`qr.pngUrl` is public.** No auth needed, so the browser can point an `<img>` at it and
+   our compositor can fetch it server-side without credentials.
+4. **The branded QR is not square.** It is 1024×1362 (aspect 1.33) because of the
+   "Trace-it" label banner. Anything assuming a square badge will distort it — the
+   compositor derives aspect from the loaded PNG and constrains both axes.
+
+### `postId` rules, enforced identically on our side
+
+Letters, digits, underscore, hyphen; must start **and end** alphanumeric; lowercased, so
+IDs are case-insensitive; 48 characters max. **No dots.** The demo's `108-347979` shape is
+valid. Validating locally turns a confusing third-party `400 invalid_post_id` into an error
+naming the offending value.
+
+### Quota
+
+`by-post` reads are free; only a genuine create charges. So both implementations look up
+by post ID **before** creating — our local store is a cache, and without that lookup a
+redeploy or cache wipe would re-mint every article. Trace-It's create is idempotent too,
+so this is the cheaper of two safety nets.
+
+Without an API key the demo generates real, scannable QR codes locally, so the integration
+stays fully testable offline. Those encode the article URL directly rather than a tracked
+short link.

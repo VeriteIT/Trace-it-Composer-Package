@@ -104,9 +104,22 @@ async function getOrCreate(articleId, mint, extra) {
     const minted = await mint();
     const record = {
       articleId,
+      // Trace-It's own id, {tenantPrefix}-{postId}. Kept for support questions;
+      // nothing here addresses a code by it, since postId is enough.
       qrId: minted.qrId,
+      postId: minted.postId ?? null,
+      // Where a scan actually goes: the Trace-It short link, which redirects and
+      // attributes the visit. This is what the QR encodes.
       shortUrl: minted.shortUrl,
+      // The "Original Source" button on the Trace-It landing page.
+      targetUrl: minted.targetUrl ?? null,
+      // Trace-It's durable public PNG. Held so we can re-fetch without spending
+      // a lookup, and so the compositor has a URL it can use directly.
+      pngUrl: minted.pngUrl ?? null,
       pngDataUri: minted.pngDataUri,
+      // Did Trace-It actually mint (and charge one unit of monthly quota), or did
+      // we adopt a code that already existed? Distinct from our cache being cold.
+      traceItCreated: minted.created === true,
       source: minted.source,
       createdAt: new Date().toISOString(),
       ...(extra && extra.imageUrl ? { imageUrl: extra.imageUrl } : {}),
