@@ -10,7 +10,7 @@
  *
  * With this in place, point the script at their own origin:
  *
- *     <script src="https://traceit.example.com/js/traceit-qr-overlay.js"
+ *     <script src="https://traceit.example.com/js/traceit-qr.js"
  *             data-service="https://www.example.lk/traceit"></script>
  *
  * ...with /traceit/v1/qr/<id>.png rewritten to this file. The script's URL shape

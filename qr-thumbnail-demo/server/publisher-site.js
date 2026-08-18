@@ -94,15 +94,19 @@ async function notifyTraceIt(article) {
   const body = {
     articleId: article.id,
     url: `${PUBLIC_BASE}/article/${article.id}`,
-    // No headline is sent. Trace-It names the code by post ID, so a title here
-    // would be accepted and discarded — see traceit-client.js.
-    //
-    // imageUrl is only needed for embed mode (QR baked into the pixels so
-    // save-as includes it). It is the same public S3 URL every reader's browser
-    // already fetches — not privileged data. Still no credentials, no article
-    // content.
-    imageUrl: article.thumb,
   };
+
+  /*
+   * That is the ENTIRE payload: the post ID and the live article URL. Nothing
+   * else — no headline, no image URL, no article body, no credentials.
+   *
+   * The image URL is not needed here because the frontend already knows it: it is
+   * the src of the <img> it is about to replace, and it passes it once on the
+   * first render. Our service remembers it from then on, so later requests are
+   * just the ID. The one case that wants it at publish time is og:image, where a
+   * social crawler asks for the composite without ever running the page script —
+   * see the README.
+   */
 
   try {
     const res = await fetch(`${TRACEIT_SERVICE}/v1/hooks/article-published`, {

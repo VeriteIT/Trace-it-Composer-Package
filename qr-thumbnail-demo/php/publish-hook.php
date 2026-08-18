@@ -36,9 +36,11 @@ declare(strict_types=1);
  *
  * @param string      $articleId  The CMS's own article ID. Becomes the postId.
  * @param string      $articleUrl Public URL of the article. Becomes targetUrl.
- * @param string|null $imageUrl   Public thumbnail URL. Only needed for embed
- *                                mode, where the QR is composited into the photo
- *                                so that Save-as includes it.
+ * @param string|null $imageUrl   OPTIONAL. Public thumbnail URL. Normally you do
+ *                                not send this: the frontend supplies it on first
+ *                                render. Send it only to make og:image work, where
+ *                                a crawler asks for the composite without ever
+ *                                running the page script.
  * @return bool  true if Trace-It acknowledged.
  */
 function traceit_notify_published(string $articleId, string $articleUrl, ?string $imageUrl = null): bool
@@ -99,9 +101,14 @@ function traceit_notify_published(string $articleId, string $articleUrl, ?string
  *
  *     traceit_notify_published(                     // <- the addition
  *         $articleId,
- *         'https://www.example.lk/article/' . $articleId,   // must be https
- *         $article->thumbUrl                                // only for embed mode
+ *         'https://www.example.lk/article/' . $articleId    // must be https
  *     );
+ *
+ * That is the whole payload: the post ID and the live article URL. The image URL
+ * is NOT needed — the frontend already knows it (it is the src of the <img> it
+ * replaces) and passes it once on the first render, after which our service
+ * remembers it. Pass it as a third argument only if you want og:image to carry
+ * the code, since a social crawler never runs the page script.
  *
  * And in the article template, the thumbnail gains one attribute:
  *
@@ -111,7 +118,7 @@ function traceit_notify_published(string $articleId, string $articleUrl, ?string
  *
  * plus one script tag, once, in the layout:
  *
- *     <script src="https://traceit.example.com/js/traceit-qr-overlay.js"
+ *     <script src="https://traceit.example.com/js/traceit-qr.js"
  *             data-selector="img.story-thumb"></script>
  *
  * That is the complete publisher-side footprint. If adding the data attribute

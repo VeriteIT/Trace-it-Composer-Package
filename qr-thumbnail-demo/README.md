@@ -10,8 +10,8 @@ The requirement this was built against is recorded in [REQUIREMENT.md](REQUIREME
 
 | | What happens | Where |
 |---|---|---|
-| **1. On publish** | The CMS POSTs `postId` + `title` (optional) + `targetUrl` (the live article URL) to Trace-It | [`php/publish-hook.php`](php/publish-hook.php) → `POST /api/v1/qr` |
-| **2. On render** | The frontend component fetches the matching QR for that article ID and puts it on the thumbnail | [`public/js/traceit-qr-overlay.js`](public/js/traceit-qr-overlay.js) → our service → `GET /api/v1/qr/by-post/{postId}` |
+| **1. On publish** | The CMS POSTs `postId` + `targetUrl` (the live article URL). That is the whole payload | [`php/publish-hook.php`](php/publish-hook.php) → `POST /api/v1/qr` |
+| **2. On render** | The frontend component fetches the matching QR for that article ID and puts it on the thumbnail | [`public/js/traceit-qr.js`](public/js/traceit-qr.js) → our service → `GET /api/v1/qr/by-post/{postId}` |
 | **3. On download** | "Save image as…" writes a file with the QR baked into the pixels | [`server/compositor.js`](server/compositor.js) / [`php/framed.php`](php/framed.php) |
 
 **On (2), one thing is not negotiable:** `by-post` authenticates with the `sk_live_…` secret,
@@ -43,13 +43,17 @@ watch its ID get captured.
 
 ```
   PUBLISH TIME
-  publisher's CMS ──POST {articleId, url, title}──▶ our service ──▶ Trace-It
-                                                        │
-                                                   store: articleId → code
+  publisher's CMS ──POST {postId, targetUrl}────────────▶ our service ──▶ Trace-It
+                                                              │
+                                                         store: postId → code
+
   PAGE VIEW
-  reader's browser ──GET /v1/qr/<articleId>.png──▶ our service
-                   ──GET thumbnail─────────────▶ their S3   (untouched, no CORS needed)
-                   overlay script places the QR inside the image frame
+  reader's browser ──GET thumbnail──────────────────────▶ their S3   (shown immediately)
+                   ──GET /v1/framed/<postId>.jpg────────▶ our service
+                                                              │  fetches that same
+                                                              │  public photo, draws
+                                                              ▼  the QR into it
+                   script repoints @src at the composite ──── done
 ```
 
 Only the article ID ever crosses the boundary. We never read their database, never touch
@@ -151,7 +155,7 @@ Set `TRACEIT_BASE` to the real host to enable live minting.
 **One script tag**, served from our domain:
 
 ```html
-<script src="https://traceit.example.com/js/traceit-qr-overlay.js"
+<script src="https://traceit.example.com/js/traceit-qr.js"
         data-selector="img.story-thumb"></script>
 ```
 
@@ -165,7 +169,7 @@ If adding that attribute is awkward in their templates, drop it — on a single-
 the script recovers the ID from the URL instead:
 
 ```html
-<script src="…/traceit-qr-overlay.js"
+<script src="…/traceit-qr.js"
         data-selector="img.story-thumb"
         data-id-from-path="/article/([A-Za-z0-9._-]+)"></script>
 ```
@@ -184,38 +188,44 @@ traceit_notify_published(                            // the addition
 
 That is the entire publisher-side footprint.
 
-## Two modes: embed and overlay
+## Which images get a code
 
-Set `data-mode` per template. Both need nothing from their S3 and no CORS anywhere.
-
-| | `embed` (default) | `overlay` |
-|---|---|---|
-| How | QR composited into the pixels by our service; `src` repointed | QR is a separate element inside the image frame |
-| **"Save image as…" includes the QR** | **Yes** | **No** |
-| Copy image / drag to desktop | **Yes** | No |
-| Print the page | Yes | Yes |
-| `og:image` can carry the QR | **Yes** — point the tag at our URL | No |
-| Image bytes served by | **us** | their CDN |
-| Their photo re-encoded | Once | No |
-| DOM changes | **none — only `src`** | wraps the `<img>`, or uses their frame |
-
-If a composite cannot be produced — our service down, image host not allowlisted — embed
-mode **falls back to drawing an overlay**, so a QR still appears. There is no configuration
-in which the page ends up worse than it started.
+Opt-in per image. The script only touches what `data-selector` matches, and the default
+matches only thumbnails the template has tagged — so logos, ads, author portraits and
+inline body images are left alone with no extra work.
 
 ```html
-<!-- default: save-as, copy-image and print all carry the QR -->
-<script src="https://traceit.example.com/js/traceit-qr-overlay.js"
+<script src="https://traceit.example.com/js/traceit-qr.js"
         data-selector="img.story-thumb"></script>
-
-<!-- opt out on heavy index pages, to keep image bytes on their CDN -->
-<script src="https://traceit.example.com/js/traceit-qr-overlay.js"
-        data-mode="overlay" data-selector="img.story-thumb"></script>
 ```
 
-Compare the two live: <http://localhost:3000> saves with the QR;
-<http://localhost:3000/?mode=overlay> saves a clean copy. Same page, same markup, one
-option different.
+Three levels of control:
+
+| Want | Do |
+|---|---|
+| Only tagged thumbnails | default — `img[data-article-id]` |
+| Only one template's images | `data-selector="img.story-thumb"` |
+| Exclude one image that matches | `data-traceit="off"` on that `<img>` |
+
+The opt-out exists for a sponsored photo, a wire-service image, or a graphic where the badge
+would cover something. It is cheaper than maintaining an ever-more-specific selector, and the
+reason lives on the image where an editor can see it. The demo's Environment story uses it, so
+its photo stays plain.
+
+## What it changes on the page: one attribute
+
+Only `src`, and only to an image with identical pixel dimensions. **No elements are added, no
+CSS is injected, nothing is wrapped.** So there is nothing for the layout to react to, and no
+interaction with the publisher's own styles.
+
+`npm run verify` measures every thumbnail, paragraph and article block with the script
+blocked, then again with it running, and fails if anything moves by more than 1px. It also
+asserts the DOM footprint is literally zero.
+
+**It degrades safely.** The publisher's own photo stays on screen until the composite has
+actually loaded. If our service is slow, unreachable, or holds no code for an article, the swap
+simply never happens and the reader sees the original photo. Verified by blocking the
+compositor and confirming every thumbnail still renders from their CDN with no broken images.
 
 ### Why embed needs a server, and why that is still within the constraints
 
@@ -267,8 +277,7 @@ a plain image endpoint, so pointing the tag at it puts the QR in share previews:
       content="https://traceit.example.com/v1/framed/<?= $article->id ?>.jpg">
 ```
 
-One line in their article template, and it is independent of `data-mode` — they can keep
-overlay mode on-page and still have the QR in shares. Worth raising: a scanned code on a
+One line in their article template. Worth raising: a scanned code on a
 WhatsApp-forwarded article is exactly the attribution a publisher cannot otherwise get.
 
 The earlier browser-side composite prototype is still in the repo; see
@@ -320,7 +329,6 @@ Every option has a `data-*` equivalent on the script tag.
 
 | Option | `data-*` | Default | Meaning |
 |---|---|---|---|
-| `mode` | `data-mode` | `overlay` | `embed` bakes the QR into the pixels |
 | `selector` | `data-selector` | `img[data-article-id]` | Which images to decorate |
 | `frameSelector` | `data-frame` | — | Use an existing frame instead of wrapping |
 | `service` | `data-service` | script's own origin | Base URL of our service |
@@ -394,7 +402,7 @@ Two traps worth knowing:
 
 | Path | Purpose |
 |---|---|
-| `public/js/traceit-qr-overlay.js` | **The deliverable** — the overlay component |
+| `public/js/traceit-qr.js` | **The deliverable** — the overlay component |
 | `server/traceit-service.js` | **Ours.** Webhook, QR endpoints, serves the script |
 | `server/compositor.js` | Server-side compositing — what makes save-as work |
 | `server/traceit-client.js` | **The only file that knows the Trace-It API shape** |

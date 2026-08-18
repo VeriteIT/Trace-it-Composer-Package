@@ -60,7 +60,7 @@
         <i class="fa-solid fa-circle-info"></i>
         Right-click any photo below and choose <strong>“Save image as…”</strong> —
         the downloaded file has the QR code in it. Scan it with your phone and it
-        opens that article.
+        opens that article. The Environment story is opted out, so its photo stays plain.
       </p>
 
       <div id="stories"></div>
@@ -77,17 +77,16 @@
           <li>On the page, our script reads <code>data-article-id</code> from the thumbnail.</li>
           <li>It requests <code>/v1/qr/&lt;id&gt;.png</code> from us and places it in the image frame.</li>
         </ol>
-        <h3 class="rail-title mt-4">Compare the two modes</h3>
-        <p class="rail-note mb-2" id="modeNote"></p>
-        <div class="d-grid gap-2">
-          <a class="btn btn-sm btn-outline-dark" id="modeToggle" href="?mode=overlay"></a>
-        </div>
-        <p class="rail-note mt-2 mb-0 small">
-          <strong>embed</strong> — our service composites the QR into the pixels, so
-          save-as, copy-image and print all carry the code.<br>
-          <strong>overlay</strong> — the QR sits on top as a separate element. Their
-          CDN still serves the photo and we send no image bytes, but save-as gives a
-          clean copy.
+        <h3 class="rail-title mt-4">Which images get a code</h3>
+        <p class="rail-note mb-2">
+          Only images matching <code>data-selector</code> — here
+          <code>img.story-thumb</code> carrying <code>data-article-id</code>. Logos, ads
+          and inline body images are never touched.
+        </p>
+        <p class="rail-note mb-0">
+          To exclude one thumbnail that would otherwise match, put
+          <code>data-traceit="off"</code> on it. The third story below has exactly that,
+          so it keeps its plain photo.
         </p>
 
         <h3 class="rail-title mt-4">No CORS anywhere</h3>
@@ -140,7 +139,9 @@ $(function () {
               ' style="float: left; max-width: 300px !important"' +
               ' class="story-thumb"' +
               ' alt="' + esc(a.caption) + '"' +
-              ' data-article-id="' + esc(a.id) + '">' +
+              ' data-article-id="' + esc(a.id) + '"' +
+              // Per-image opt-out, shown on one story so the control is visible.
+              (a.section === 'Environment' ? ' data-traceit="off"' : '') + '>' +
           a.body.map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') +
         '</article>';
     }).join('');
@@ -155,31 +156,7 @@ $(function () {
   function time(iso) {
     return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
-
-  // Mode switcher for the demo. A real deployment just sets data-mode.
-  var overlayMode = new URLSearchParams(location.search).get('mode') === 'overlay';
-  $('#modeNote').html(overlayMode
-    ? 'Currently <strong>overlay</strong> mode — a save-as here gives the clean photo, with no code.'
-    : 'Currently <strong>embed</strong> mode — a save-as here gives the QR-embedded file.');
-  $('#modeToggle')
-    .attr('href', overlayMode ? '/' : '?mode=overlay')
-    .html(overlayMode
-      ? '<i class="fa-solid fa-arrow-right"></i> Switch to embed mode'
-      : '<i class="fa-solid fa-arrow-right"></i> Switch to overlay mode');
 });
-</script>
-
-<!--
-  Demo-only: lets you flip modes from the URL to compare them side by side.
-  ?mode=overlay  →  QR drawn on top; save-as gives the clean photo
-  (default)      →  QR baked into the pixels; save-as gives the QR-embedded file
-  A real deployment just sets data-mode on the tag below.
--->
-<script>
-  window.TraceItQROverlayConfig = {
-    mode: new URLSearchParams(location.search).get('mode') === 'overlay'
-      ? 'overlay' : 'embed'
-  };
 </script>
 
 <!--
@@ -192,7 +169,7 @@ $(function () {
   picked up automatically via MutationObserver.
   ===========================================================================
 -->
-<script src="http://localhost:3002/js/traceit-qr-overlay.js"
+<script src="http://localhost:3002/js/traceit-qr.js"
         data-selector="img.story-thumb"
         data-corner="bottom-right"></script>
 </body>

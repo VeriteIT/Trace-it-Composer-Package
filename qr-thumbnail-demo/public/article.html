@@ -47,10 +47,9 @@
           dragging it to the desktop, and printing the page.
         </p>
         <p class="rail-note">
-          This page runs <code>data-mode="embed"</code>: our service composited
-          the code into the pixels, so the QR <em>is</em> the image. The homepage
-          uses overlay mode instead — save the photo there and you get a clean
-          copy with no code.
+          Our service composited the code into the pixels, so the QR <em>is</em> the
+          image. Nothing on this page is layered on top — only the <code>src</code>
+          attribute changed, to a file with identical dimensions.
         </p>
         <div class="rail-note small" id="embedStatus">
           <span class="text-muted">checking…</span>
@@ -130,17 +129,15 @@ $(function () {
 </script>
 
 <!--
-  Same one tag, but data-mode="embed" this time.
+  The same one tag as the homepage.
 
   Our service composites the QR into the photo's pixels and the script repoints
-  the <img> at that. So on THIS page, right-click → "Save image as…" produces a
-  file with the QR in it, and so do "Copy image", drag-to-desktop and Ctrl+P.
-  The homepage uses the default overlay mode, so you can compare the two.
+  the <img> at that, so right-click → "Save image as…" produces a file with the QR
+  in it. "Copy image", drag-to-desktop and Ctrl+P all carry it too.
 
-  The ID still comes from the URL — no markup change on this template at all.
+  The ID comes from the URL here — no markup change on this template at all.
 -->
-<script src="http://localhost:3002/js/traceit-qr-overlay.js"
-        data-mode="embed"
+<script src="http://localhost:3002/js/traceit-qr.js"
         data-selector="img.story-thumb"
         data-id-from-path="/article/([A-Za-z0-9._-]+)"></script>
 </body>
