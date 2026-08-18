@@ -109,9 +109,19 @@
     // frame — the two are measured against different things. null = server default.
     embedScale: null,
 
-    // White plate behind the code, so it stays scannable over busy photography.
-    plate: true,
-    platePadPct: 7, // of the QR's own width
+    /*
+     * White plate behind the code. OFF by default.
+     *
+     * A Trace-It branded PNG is already a white rounded card — code on white,
+     * inside its own rounded border, above the label banner. A plate behind that
+     * shows up as a second border with a drop shadow around a badge that already
+     * has an edge. The plate was there for scannability over busy photography,
+     * which the branded PNG handles itself.
+     *
+     * Turn it back on for a bare, transparent QR with no quiet zone of its own.
+     */
+    plate: false,
+    platePadPct: 7, // of the QR's own width; used only when plate is true
     radiusPx: 4,
 
     // Overlay ignores the pointer by default, so the publisher's existing
