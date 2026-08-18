@@ -3,20 +3,24 @@
  *
  * Run with `npm run verify`.
  *
- * The two claims that actually matter to the client are:
+ * The claims that actually matter to the client:
  *
- *   1. The overlay approach works against their S3 layer with no changes to it.
- *   2. The composite (bake-the-QR-into-the-pixels) approach CANNOT work against
- *      that same S3 layer without CORS headers we are not able to set.
+ *   1. A native "Save image as…" produces a file with a scannable QR in it.
+ *   2. Only images the publisher marks get a code; the rest are untouched.
+ *   3. The page does not move, and nothing is added to the DOM.
+ *   4. If our service is unreachable, the article still renders normally.
+ *   5. This works against their S3 layer with NO changes to it — and it has to,
+ *      because compositing in the browser is impossible without CORS headers we
+ *      cannot set on someone else's bucket.
  *
- * Claim 2 is the reason the architecture is what it is, so it is asserted here
- * rather than merely explained. A real Chromium is required for that: canvas
- * tainting is a browser security behaviour and cannot be reproduced in
- * node-canvas, which has no concept of origins.
+ * Claim 5 is the reason the architecture is what it is, so it is asserted rather
+ * than explained. A real Chromium is required: canvas tainting is a browser
+ * security behaviour and cannot be reproduced in node-canvas, which has no
+ * concept of origins.
  *
- * The layout check works by loading the page twice — once with the overlay
- * script blocked, once with it running — and comparing element geometry. That
- * is the only honest way to claim "the page does not move".
+ * Claim 3 works by loading the page twice — once with the script blocked, once
+ * with it running — and comparing element geometry. That is the only honest way
+ * to claim "the page does not move".
  */
 
 'use strict';
@@ -30,7 +34,7 @@ const OUT_DIR = path.join(__dirname, '..', 'verify-output');
 const CMS = 'http://localhost:3000';
 const S3 = 'http://localhost:3001';
 const TRACEIT = 'http://localhost:3002';
-const OVERLAY_SCRIPT = `${TRACEIT}/js/traceit-qr-overlay.js`;
+const SCRIPT_URL = `${TRACEIT}/js/traceit-qr.js`;
 
 let failures = 0;
 let checks = 0;
@@ -393,17 +397,17 @@ async function checkBrowser(articleId) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
 
   try {
-    /* --- baseline: overlay script blocked ------------------------------- */
+    /* --- baseline: script blocked, so we can compare geometry ----------- */
     const basePage = await context.newPage();
-    await basePage.route(OVERLAY_SCRIPT, (route) => route.abort());
-    await basePage.goto(`${CMS}/?mode=overlay`, { waitUntil: 'load' });
+    await basePage.route(SCRIPT_URL, (route) => route.abort());
+    await basePage.goto(`${CMS}/`, { waitUntil: 'load' });
     await settle(basePage);
     const before = await basePage.evaluate(MEASURE);
-    await basePage.screenshot({ path: path.join(OUT_DIR, 'without-overlay.png'), fullPage: true });
+    await basePage.screenshot({ path: path.join(OUT_DIR, 'without-script.png'), fullPage: true });
     await basePage.close();
 
-    /* --- with the overlay running -------------------------------------- */
-    section('Browser: overlay behaviour');
+    /* --- with the script running ---------------------------------------- */
+    section('Browser: embedding');
 
     const page = await context.newPage();
     const consoleErrors = [];
@@ -416,74 +420,77 @@ async function checkBrowser(articleId) {
       if (r.status() >= 400) badResponses.push(`HTTP ${r.status()} ${r.url()}`);
     });
 
-    // ?mode=overlay — the demo defaults to embed now, so the overlay-specific
-    // assertions below have to ask for overlay explicitly.
-    await page.goto(`${CMS}/?mode=overlay`, { waitUntil: 'load' });
+    await page.goto(`${CMS}/`, { waitUntil: 'load' });
     await settle(page);
     await page.waitForFunction(
-      `document.querySelectorAll('[data-tqr-el="code"]').length > 0`,
-      { timeout: 15000 }
+      `(() => { const t = [...document.querySelectorAll('img.story-thumb')];
+                return t.length > 0 && t.every(i => i.getAttribute('data-tqr-state')); })()`,
+      { timeout: 30000 }
     ).catch(() => {});
 
-    const badges = await page.evaluate(`(() => {
-      const codes = [...document.querySelectorAll('[data-tqr-el="code"]')];
-      return codes.map((c) => {
-        const frame = c.closest('[data-tqr-el="frame"]') || c.parentElement.parentElement;
-        const img = frame.querySelector('img');
-        const cb = c.getBoundingClientRect();
-        const ib = img.getBoundingClientRect();
-        return {
-          inside: cb.left >= ib.left - 1 && cb.top >= ib.top - 1 &&
-                  cb.right <= ib.right + 1 && cb.bottom <= ib.bottom + 1,
-          w: Math.round(cb.width), h: Math.round(cb.height),
-          imgW: Math.round(ib.width), imgH: Math.round(ib.height),
-          bg: getComputedStyle(c).backgroundImage.slice(0, 60),
-          pointerEvents: getComputedStyle(c).pointerEvents,
-          visible: cb.width > 0 && cb.height > 0 && getComputedStyle(c).opacity !== '0',
-        };
-      });
-    })()`);
+    const thumbs = await page.evaluate(`(() => [...document.querySelectorAll('img.story-thumb')].map(i => ({
+      state: i.getAttribute('data-tqr-state'),
+      src: i.currentSrc || i.src,
+      original: i.getAttribute('data-tqr-src0'),
+      optedOut: i.getAttribute('data-traceit') === 'off',
+      naturalW: i.naturalWidth,
+      naturalH: i.naturalHeight,
+    })))()`);
 
-    // `[].every()` is true, so every badge assertion below has to require a
-    // non-empty list or they all pass vacuously when nothing rendered at all.
-    const all = (fn) => badges.length > 0 && badges.every(fn);
+    const wanted = thumbs.filter((t) => !t.optedOut);
+    const excluded = thumbs.filter((t) => t.optedOut);
 
-    assert(badges.length > 0, 'QR badge rendered', `${badges.length} badge(s)`);
-    assert(all((b) => b.inside), 'every badge sits INSIDE its image frame',
-      badges.map((b) => `${b.w}x${b.h} in ${b.imgW}x${b.imgH}`).join(', '));
-    assert(all((b) => b.visible), 'badges are visible (non-zero box, faded in)');
-    assert(all((b) => b.bg.includes('/v1/qr/')), 'badge is painted from our QR endpoint');
-    assert(all((b) => b.pointerEvents === 'none'),
-      'badge does not swallow pointer events', 'right-click/click on the photo still reaches the photo');
-
-    // Overlay mode must leave the image itself alone: their CDN still serves it,
-    // and a save-as there gets the clean photo. This is the counterpart of the
-    // embed-mode assertion further down.
-    const srcs = await page.evaluate(`(() => [...document.querySelectorAll('img.story-thumb')]
-      .map(i => i.currentSrc || i.src))()`);
+    assert(thumbs.length > 0, 'thumbnails present', `${thumbs.length}`);
     assert(
-      srcs.length > 0 && srcs.every((s) => s.includes(':3001/media/')),
-      'overlay mode leaves @src pointing at their S3',
-      `${srcs.length} thumbnails still served by their CDN`
+      wanted.length > 0 && wanted.every((t) => t.src.includes('/v1/framed/')),
+      'every wanted thumbnail serves the composited file',
+      `${wanted.filter((t) => t.src.includes('/v1/framed/')).length}/${wanted.length} — save-as carries the QR`
     );
     assert(
-      srcs.every((s) => !s.includes('/v1/framed/')),
-      'overlay mode serves no image bytes from us'
+      wanted.every((t) => (t.original || '').includes(':3001/')),
+      'the original src was their S3 photo',
+      'so the swap replaced their image, not something else'
+    );
+    assert(
+      wanted.every((t) => t.naturalW > 0 && t.naturalH > 0),
+      'every composite decoded in the browser',
+      wanted.map((t) => t.naturalW + 'x' + t.naturalH).join(', ')
     );
 
-    // One badge per thumbnail — the in-flight re-entry bug would double them.
-    const counts = await page.evaluate(`(() => {
-      const frames = [...document.querySelectorAll('[data-tqr-el="frame"]')];
-      return frames.map(f => f.querySelectorAll('[data-tqr-el="code"]').length);
-    })()`);
-    assert(counts.length > 0 && counts.every((n) => n === 1),
-      'exactly one badge per thumbnail', `counts: ${counts.join(',')}`);
+    /* --- per-image opt-out ---------------------------------------------- */
+    section('Browser: per-image control');
+
+    assert(excluded.length > 0, 'the demo includes an opted-out thumbnail',
+      `${excluded.length} with data-traceit="off"`);
+    assert(
+      excluded.every((t) => t.state === 'skipped-opted-out'),
+      'data-traceit="off" is honoured',
+      excluded.map((t) => t.state).join(', ')
+    );
+    assert(
+      excluded.every((t) => t.src.includes(':3001/media/') && !t.src.includes('/v1/framed/')),
+      'an opted-out photo is left completely untouched',
+      'still served by their CDN, no request to us'
+    );
+
+    /* --- the script must add NOTHING to the DOM ------------------------- */
+    section('Browser: DOM footprint');
+
+    const footprint = await page.evaluate(`(() => ({
+      injectedElements: document.querySelectorAll('[data-tqr-el]').length,
+      injectedStyles: [...document.querySelectorAll('style')].filter(s => /tqr-/.test(s.textContent || '')).length,
+      wrappers: document.querySelectorAll('span.tqr-frame').length,
+    }))()`);
+
+    assert(footprint.injectedElements === 0, 'adds no elements', 'only @src changes');
+    assert(footprint.injectedStyles === 0, 'injects no CSS');
+    assert(footprint.wrappers === 0, 'wraps nothing — the <img> keeps its exact place in the DOM');
 
     /* --- layout must not move ------------------------------------------ */
     section('Browser: layout safety');
 
     const after = await page.evaluate(MEASURE);
-    await page.screenshot({ path: path.join(OUT_DIR, 'with-overlay.png'), fullPage: true });
+    await page.screenshot({ path: path.join(OUT_DIR, 'with-script.png'), fullPage: true });
 
     const same = (a, b, tol = 1.0) =>
       a.length === b.length && a.every((row, i) => row.every((v, j) => Math.abs(v - b[i][j]) <= tol));
@@ -506,20 +513,21 @@ async function checkBrowser(articleId) {
     assert(badResponses.length === 0, 'every request on the page succeeded',
       badResponses.slice(0, 3).join(' | ') || 'clean');
 
-    /* --- teardown restores the DOM ------------------------------------- */
+    /* --- teardown puts the originals back ------------------------------- */
     const restored = await page.evaluate(`(() => {
-      window.TraceItQROverlay.teardown();
-      const img = document.querySelector('img.story-thumb');
+      window.TraceItQR.teardown();
+      const imgs = [...document.querySelectorAll('img.story-thumb')];
       return {
-        wrappers: document.querySelectorAll('[data-tqr-el="frame"]').length,
-        badges: document.querySelectorAll('[data-tqr-el="code"]').length,
-        style: img ? img.getAttribute('style') : null,
+        stillFramed: imgs.filter(i => (i.currentSrc || i.src).includes('/v1/framed/')).length,
+        marked: document.querySelectorAll('[data-tqr-src0]').length,
+        style: imgs[0] ? imgs[0].getAttribute('style') : null,
       };
     })()`);
-    assert(restored.wrappers === 0 && restored.badges === 0, 'teardown() removes every element it added');
+    assert(restored.stillFramed === 0 && restored.marked === 0,
+      'teardown() restores every original photo');
     assert(
       /float:\s*left/.test(restored.style || '') && /max-width:\s*300px/.test(restored.style || ''),
-      "teardown() restores the author's original inline style",
+      "the author's inline style was never modified in the first place",
       restored.style
     );
 
@@ -570,16 +578,9 @@ async function checkBrowser(articleId) {
     await artPage.goto(`${CMS}/article/${articleId}`, { waitUntil: 'load' });
     await artPage.waitForSelector('img.story-thumb', { timeout: 15000 });
     await artPage.waitForFunction(
-      `document.querySelectorAll('[data-tqr-el="code"]').length > 0`,
-      { timeout: 15000 }
-    ).catch(() => {});
-
-    // The article page runs embed mode, so there is no overlay element here —
-    // the QR is in the image itself and only @src changes.
-    await artPage.waitForFunction(
       `(() => { const i = document.querySelector('img.story-thumb');
                 return i && i.getAttribute('data-tqr-state') === 'done'; })()`,
-      { timeout: 15000 }
+      { timeout: 30000 }
     ).catch(() => {});
 
     const art = await artPage.evaluate(`(() => {
@@ -588,138 +589,84 @@ async function checkBrowser(articleId) {
       return {
         found: true,
         hasIdAttr: img.hasAttribute('data-article-id'),
-        mode: img.getAttribute('data-tqr-mode'),
         state: img.getAttribute('data-tqr-state'),
         src: img.currentSrc || img.src,
         original: img.getAttribute('data-tqr-src0'),
-        naturalW: img.naturalWidth,
-        naturalH: img.naturalHeight,
-        overlayEls: document.querySelectorAll('[data-tqr-el="code"]').length,
-        wrappers: document.querySelectorAll('[data-tqr-el="frame"]').length,
+        injected: document.querySelectorAll('[data-tqr-el]').length,
       };
     })()`);
 
     assert(art.found, 'article thumbnail present');
     assert(art.hasIdAttr === false, 'thumbnail carries no data-article-id here',
       'so the ID must come from the URL');
-    assert(art.mode === 'embed', 'embed mode engaged', `state=${art.state}`);
+    assert(art.state === 'done', 'embedding completed', `state=${art.state}`);
     assert(
       art.src.includes(`/v1/framed/${articleId}`),
-      'the <img> now serves the composited file',
+      'the <img> serves the composited file',
       'so a native save-as writes the QR-embedded image'
     );
-    assert(
-      (art.original || '').includes(':3001/'),
-      'the original src was the S3 photo',
-      art.original
-    );
-    assert(
-      art.overlayEls === 0 && art.wrappers === 0,
-      'embed mode adds NO elements to the DOM',
-      `overlay spans: ${art.overlayEls}, wrappers: ${art.wrappers}`
-    );
-    assert(art.naturalW > 0 && art.naturalH > 0,
-      'the composite actually decoded in the browser',
-      `${art.naturalW}x${art.naturalH}`);
+    assert((art.original || '').includes(':3001/'), 'the original src was their S3 photo',
+      art.original);
+    assert(art.injected === 0, 'still adds nothing to the DOM');
 
     await artPage.screenshot({ path: path.join(OUT_DIR, 'article-page.png'), fullPage: true });
     await artPage.close();
 
-    /* --- the default: every thumbnail saves with the QR ----------------- */
-    section('Browser: default mode on a list page');
-
-    const listPage = await context.newPage();
-    await listPage.goto(`${CMS}/`, { waitUntil: 'load' });
-    await settle(listPage);
-    await listPage.waitForFunction(
-      `(() => { const t = [...document.querySelectorAll('img.story-thumb')];
-                return t.length > 0 && t.every(i => i.getAttribute('data-tqr-state') === 'done'); })()`,
-      { timeout: 20000 }
-    ).catch(() => {});
-
-    const list = await listPage.evaluate(`(() => {
-      const imgs = [...document.querySelectorAll('img.story-thumb')];
-      return {
-        n: imgs.length,
-        framed: imgs.filter(i => (i.currentSrc || i.src).includes('/v1/framed/')).length,
-        modes: [...new Set(imgs.map(i => i.getAttribute('data-tqr-mode')))],
-      };
-    })()`);
-
-    assert(list.n > 0, 'list page has thumbnails', `${list.n}`);
-    assert(
-      list.framed === list.n,
-      'EVERY thumbnail serves the QR-embedded file by default',
-      `${list.framed}/${list.n} — so save-as works on every image, not just article pages`
-    );
-    await listPage.close();
-
-    /* --- embed must fall back, never leave the page worse off ----------- */
-    section('Browser: embed failure falls back to an overlay');
+    /* --- graceful failure ----------------------------------------------- */
+    section('Browser: failure leaves the page working');
 
     const failPage = await context.newPage();
-    // Simulate our compositor being unavailable / the image host not allowlisted.
+    // Simulate our compositor being unreachable, or holding no code for a post.
     await failPage.route('**/v1/framed/**', (route) => route.abort());
     await failPage.goto(`${CMS}/`, { waitUntil: 'load' });
     await settle(failPage);
     await failPage.waitForFunction(
-      `document.querySelectorAll('[data-tqr-el="code"]').length > 0`,
-      { timeout: 20000 }
+      `(() => { const t = [...document.querySelectorAll('img.story-thumb')];
+                return t.length > 0 && t.every(i => i.getAttribute('data-tqr-state')); })()`,
+      { timeout: 30000 }
     ).catch(() => {});
 
-    const fallback = await failPage.evaluate(`(() => {
+    const failed = await failPage.evaluate(`(() => {
       const imgs = [...document.querySelectorAll('img.story-thumb')];
       return {
         n: imgs.length,
-        badges: document.querySelectorAll('[data-tqr-el="code"]').length,
         stillS3: imgs.filter(i => (i.currentSrc || i.src).includes(':3001/media/')).length,
+        broken: imgs.filter(i => i.naturalWidth === 0).length,
+        injected: document.querySelectorAll('[data-tqr-el]').length,
       };
     })()`);
 
-    assert(
-      fallback.badges > 0,
-      'a QR still appears when compositing fails',
-      `${fallback.badges} overlay badge(s) drawn instead`
-    );
-    assert(
-      fallback.stillS3 === fallback.n,
-      'the publisher photo is untouched in that case',
-      `${fallback.stillS3}/${fallback.n} still served by their CDN`
-    );
-    await failPage.screenshot({ path: path.join(OUT_DIR, 'embed-fallback.png'), fullPage: true });
+    assert(failed.n > 0 && failed.stillS3 === failed.n,
+      'every photo falls back to the publisher original',
+      `${failed.stillS3}/${failed.n} still served by their CDN`);
+    assert(failed.broken === 0, 'no broken images', 'the reader sees the article normally');
+    assert(failed.injected === 0, 'nothing was added that would need cleaning up');
+    await failPage.screenshot({ path: path.join(OUT_DIR, 'compositor-down.png'), fullPage: true });
     await failPage.close();
 
-    /* --- mobile: the float re-sync ------------------------------------- */
-    section('Browser: responsive re-sync');
+    /* --- mobile --------------------------------------------------------- */
+    section('Browser: mobile width');
 
     await page.setViewportSize({ width: 420, height: 900 });
-    await page.goto(`${CMS}/?mode=overlay`, { waitUntil: 'load' });
+    await page.goto(`${CMS}/`, { waitUntil: 'load' });
     await settle(page);
     await page.waitForFunction(
-      `document.querySelectorAll('[data-tqr-el="code"]').length > 0`,
-      { timeout: 15000 }
+      `(() => { const t = [...document.querySelectorAll('img.story-thumb')];
+                return t.length > 0 && t.every(i => i.getAttribute('data-tqr-state')); })()`,
+      { timeout: 30000 }
     ).catch(() => {});
 
     const mobile = await page.evaluate(`(() => {
-      const frame = document.querySelector('[data-tqr-el="frame"]');
-      const code = document.querySelector('[data-tqr-el="code"]');
-      if (!frame || !code) return { ok: false };
-      const fb = frame.getBoundingClientRect();
-      const cb = code.getBoundingClientRect();
-      return {
-        ok: true,
-        frameFloat: getComputedStyle(frame).float,
-        overflowsViewport: fb.right > window.innerWidth + 1,
-        badgeInside: cb.right <= fb.right + 1 && cb.bottom <= fb.bottom + 1,
-        badgeW: Math.round(cb.width),
-      };
+      const imgs = [...document.querySelectorAll('img.story-thumb')];
+      const framed = imgs.filter(i => (i.currentSrc || i.src).includes('/v1/framed/'));
+      const overflow = imgs.filter(i => i.getBoundingClientRect().right > window.innerWidth + 1);
+      return { n: imgs.length, framed: framed.length, overflow: overflow.length };
     })()`);
 
-    assert(mobile.ok, 'badge renders at mobile width');
-    assert(!mobile.overflowsViewport, 'frame does not overflow the viewport',
-      `float: ${mobile.frameFloat}`);
-    assert(mobile.badgeInside, 'badge still inside the frame at mobile width',
-      `badge ${mobile.badgeW}px wide`);
+    assert(mobile.framed > 0, 'composites still served at mobile width',
+      `${mobile.framed}/${mobile.n}`);
+    assert(mobile.overflow === 0, 'no thumbnail overflows the viewport',
+      'the publisher’s own responsive CSS is untouched');
 
     await page.screenshot({ path: path.join(OUT_DIR, 'mobile.png'), fullPage: true });
     await page.close();

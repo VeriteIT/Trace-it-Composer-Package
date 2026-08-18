@@ -134,7 +134,7 @@ time, since then there is no second generation. Worth asking, not worth blocking
 | R1 | CMS POSTs `{articleId, url, title}` to our webhook on publish | `php/publish-hook.php`, `server/publisher-site.js` |
 | R1 (fallback) | Frontend sends the ID it found in the DOM; we mint on first view | `server/traceit-service.js` |
 | R2 | One mint per ID, cached forever, concurrent-safe | `server/store.js`, `server/traceit-client.js` |
-| R3 | Badge positioned inside the image frame, layout preserved | `public/js/traceit-qr-overlay.js` |
+| R3 | Badge positioned inside the image frame, layout preserved | `public/js/traceit-qr.js` |
 | R4 | `GET {service}/v1/qr/{articleId}.png` | `server/traceit-service.js` |
 | C1–C3 | Only the ID crosses the boundary; mapping is held on our side | `server/store.js` |
 

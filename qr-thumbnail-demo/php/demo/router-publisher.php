@@ -88,10 +88,13 @@ function notify_traceit(array $article, string $service, string $secret, string 
     $payload = json_encode([
         'articleId' => $article['id'],
         'url'       => $publicBase . '/article/' . $article['id'],
-        // Only needed for embed mode. The same public S3 URL every reader's
-        // browser already fetches — not privileged data.
-        'imageUrl'  => $article['thumb'],
     ], JSON_UNESCAPED_SLASHES);
+
+    /*
+     * The ENTIRE payload: post ID and live article URL. The frontend supplies the
+     * image URL on first render and our service remembers it, so the CMS never
+     * has to. See the README for the og:image exception.
+     */
 
     $ch = curl_init(rtrim($service, '/') . '/v1/hooks/article-published');
     curl_setopt_array($ch, [

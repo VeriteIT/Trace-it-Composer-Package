@@ -23,8 +23,8 @@ $traceIt = new TraceIt([
     'allowedImageHosts' => ['cdn.example.lk'],             // only for step 3
 ]);
 
-// 1. when an article is published
-$traceIt->publish($post->id, $post->url, $post->thumbUrl);
+// 1. when an article is published — post ID and live URL, nothing else
+$traceIt->publish($post->id, $post->url);
 
 // 2. when rendering it
 $code = $traceIt->qr($post->id);
@@ -48,10 +48,14 @@ $postId = $cms->publish($draft);              // your existing code
 
 $traceIt->publish(                            // the addition
     $postId,
-    'https://www.example.lk/article/' . $postId,   // must be https, see below
-    $draft->thumbUrl                               // only needed for step 3
+    'https://www.example.lk/article/' . $postId    // must be https, see below
 );
 ```
+
+You do **not** send the image URL. The frontend already knows it — it is the `src` of the
+`<img>` it replaces — and passes it once on the first render, after which it is remembered.
+Pass a third argument only to make `og:image` carry the code, since a social crawler never
+runs the page script.
 
 `publish()` **never throws.** A QR code is not worth failing an editor's publish
 action over, so it returns `null` and logs on failure. The code gets created on the
@@ -128,26 +132,22 @@ produces **one** create, not 500.
 `$code->created` tells you whether a call actually charged quota — do not infer it from
 your own cache being cold.
 
-## Two ways to show the code
+## The composite is what makes Save-as work
 
-| | Overlay | Embed (`framedImage()`) |
-|---|---|---|
-| How | `<img>` of `$code->pngUrl` positioned over the photo | QR composited into the photo's pixels |
-| **Save image as… includes it** | No | **Yes** |
-| Copy image / drag out | No | **Yes** |
-| `og:image` can carry it | No | **Yes** |
-| Image bytes served by | your CDN | you, from this endpoint |
-| Needs `ext-gd` | No | Yes |
-| Re-encodes the photo | No | Once |
+`framedImage()` returns the photo with the QR in its pixels. That is the only way a
+native "Save image as…" can carry the code: save-as writes the bytes of whatever the
+`<img>` is showing, fires no DOM event and runs no script. "Copy image",
+drag-to-desktop, printing and `og:image` all follow from the same fact.
 
-Embed re-encodes a JPEG once, at quality 95 — measured at 53–56 dB PSNR, which is
-imperceptible, though the file roughly doubles because a QR's hard edges are expensive
-to encode. A PNG source stays PNG and stays lossless. Resolution never changes.
+Needs `ext-gd`. Re-encodes a JPEG once, at quality 95 — measured at 53–56 dB PSNR,
+which is imperceptible, though the file roughly doubles because a QR's hard edges are
+expensive to encode. A PNG source stays PNG and stays lossless. **Resolution never
+changes.**
 
-**Cache-bust when you change the badge.** `FramedImage::headers()` sends
-`immutable`, which is correct for a file that never changes but means browsers will
-not re-ask. Put a version in the URL you serve it from and bump it, or a redesign
-stays invisible to everyone who has already loaded the page.
+**Cache-bust when you change the badge.** `FramedImage::headers()` sends `immutable`,
+which is correct for a file that never changes but means browsers will not re-ask. Put a
+version in the URL you serve it from and bump it, or a redesign stays invisible to
+everyone who has already loaded the page.
 
 ## Errors
 

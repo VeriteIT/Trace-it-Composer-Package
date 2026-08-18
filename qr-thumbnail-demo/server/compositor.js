@@ -20,7 +20,7 @@
  *   the image delivery path: our bandwidth, our latency, our uptime. Mitigated
  *   by an immutable disk cache here and, in production, a CDN in front. The
  *   frontend also degrades safely — see the `embed` mode in
- *   traceit-qr-overlay.js, which keeps the S3 image on screen and only swaps to
+ *   traceit-qr.js, which keeps the S3 image on screen and only swaps to
  *   the composite once it has actually loaded.
  * ===========================================================================
  */
