@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace VeriteIt\TraceItQr\Cache;
 
+use VeriteIt\TraceItQr\Log;
 use VeriteIt\TraceItQr\Misconfigured;
 
 /**
@@ -20,9 +21,11 @@ use VeriteIt\TraceItQr\Misconfigured;
 final class FilesystemStore implements Store
 {
     private string $dir;
+    private Log $log;
 
-    public function __construct(?string $directory = null)
+    public function __construct(?string $directory = null, ?Log $log = null)
     {
+        $this->log = $log ?? new Log();
         $this->dir = rtrim($directory ?? (sys_get_temp_dir() . '/trace-it-qr'), '/\\');
 
         if (!is_dir($this->dir) && !@mkdir($this->dir, 0770, true) && !is_dir($this->dir)) {
@@ -104,7 +107,7 @@ final class FilesystemStore implements Store
             // Locking is an optimisation against duplicate spend, not a
             // correctness requirement — Trace-It's create is idempotent anyway.
             // So proceed rather than fail the caller's publish.
-            trigger_error('trace-it: could not acquire mint lock; proceeding unlocked', E_USER_NOTICE);
+            $this->log->notice('could not acquire mint lock; proceeding unlocked');
             return $work();
         }
 

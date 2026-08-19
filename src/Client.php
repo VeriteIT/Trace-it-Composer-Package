@@ -47,13 +47,18 @@ final class Client
         'localhost',
     ];
 
+    private readonly Log $log;
+
     public function __construct(
         private readonly string $apiKey,
         private readonly string $baseUrl,
         private readonly string $folder = '',
         private readonly int $timeout = 15,
         private readonly int $connectTimeout = 5,
+        ?Log $log = null,
     ) {
+        $this->log = $log ?? new Log();
+
         if (trim($this->apiKey) === '') {
             throw new Misconfigured(
                 'No Trace-It API key. Set TRACEIT_API_KEY, or pass apiKey in the config. '
@@ -150,15 +155,23 @@ final class Client
             if (str_starts_with(strtolower($targetUrl), 'https:')) {
                 $body['targetUrl'] = $targetUrl;
             } else {
-                trigger_error(
-                    sprintf(
-                        'trace-it: targetUrl "%s" is not https, so it was omitted. Trace-It only '
-                        . 'accepts https. The QR still works and still tracks; the landing page '
-                        . 'just has no "Original Source" button.',
-                        $targetUrl
-                    ),
-                    E_USER_NOTICE
-                );
+                /*
+                 * A WARNING, not a notice. This is not informational: the article's
+                 * verification page loses its "Original Source" button, and keeps
+                 * losing it on every republish until somebody passes an https URL.
+                 * The QR still scans and still tracks, so nothing here fails and no
+                 * exception is thrown — which is exactly why the message has to be
+                 * loud enough to reach a human. It was an E_USER_NOTICE, and a
+                 * production php.ini does not display those.
+                 */
+                $this->log->warning(sprintf(
+                    'targetUrl "%s" is not https, so it was omitted and this article has no '
+                    . '"Original Source" button on its verification page. Trace-It only accepts '
+                    . 'https. The QR still works and still tracks. Pass the live https article '
+                    . 'URL; if you are seeing this in production, the CMS is handing us a '
+                    . 'development or protocol-relative URL.',
+                    $targetUrl
+                ));
             }
         }
 

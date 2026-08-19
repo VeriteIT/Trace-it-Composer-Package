@@ -1,0 +1,64 @@
+Trace-It QR — PHP integration package (veriteit/trace-it-qr)
+
+Copyright © 2026 Verite Research. All rights reserved.
+
+PROPRIETARY SOFTWARE — NOT OPEN SOURCE
+
+This software is licensed, not sold. It is made available only to organisations
+with a current Trace-It subscription or written agreement with Verite Research
+("the Licensee"), for the sole purpose of integrating the Licensee's own systems
+with the Trace-It service.
+
+PERMITTED
+
+  1. Install, copy and run this software on infrastructure the Licensee owns or
+     controls, including development, staging and production environments, with
+     no limit on the number of installations or servers.
+
+  2. Modify it, and integrate it into the Licensee's own applications, including
+     applying local patches. The code is supplied readable because a maintainer
+     will need to read it.
+
+  3. Permit contractors and agencies to do the above on the Licensee's behalf,
+     provided they do so only for the Licensee and are bound by these terms.
+
+NOT PERMITTED
+
+  4. Redistribution, publication, sublicensing, sale or other transfer of this
+     software or any derivative of it, in source or compiled form, to anyone
+     other than as allowed by clause 3.
+
+  5. Use to build, operate or assist any product or service that competes with
+     Trace-It, and use of it to access any service other than Trace-It.
+
+  6. Removal or alteration of this notice, or of the copyright notices in the
+     source files.
+
+CREDENTIALS
+
+  7. Trace-It API keys are issued per tenant and are confidential. This licence
+     grants no right to share a key, and no right to use a key issued to another
+     organisation. See README.md for key handling.
+
+NO WARRANTY
+
+  8. This software is provided "as is", without warranty of any kind, express or
+     implied, including but not limited to the warranties of merchantability,
+     fitness for a particular purpose and non-infringement.
+
+  9. To the maximum extent permitted by law, Verite Research shall not be liable
+     for any claim, damages or other liability, whether in an action of contract,
+     tort or otherwise, arising from or in connection with this software or its
+     use. Nothing in this licence limits liability that cannot be limited by law.
+
+TERMINATION
+
+ 10. This licence ends automatically if the Licensee breaches it, or when the
+     Licensee's Trace-It agreement ends. On termination the Licensee shall stop
+     using the software and remove it from their systems. Clauses 8 and 9 survive.
+
+GOVERNING LAW
+
+ 11. This licence is governed by the laws of Sri Lanka.
+
+Questions about licensing: https://trace-it.io
