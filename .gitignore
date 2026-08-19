@@ -1,31 +1,20 @@
-# Secrets — never commit
+# Composer install output. composer.json is committed; the installed tree is not.
+/vendor/
+
+# Secrets — never commit. The API key belongs in the environment.
 .env
 .env.*
-!.env.example
 
-# Dependencies
-node_modules/
-# Composer deps for the PHP demo layer. composer.json/lock ARE committed so the
-# tree is reproducible; the installed packages are not.
-vendor/
-# Locally installed composer.phar
-.tools/
+# Local composer.phar, if you keep one here rather than installing globally.
+/.tools/
 
-# Build/generated output
-verify-output/
+# Editor / tooling
+.claude/
+.vscode/
+.idea/
 
-# Runtime state: the articleId -> QR store and the mock CMS's articles.
-# Regenerated on demand; the QR data URIs make it large and noisy in diffs.
-data/
-
-# Logs
-*.log
-npm-debug.log*
-
-# OS / editor
+# OS
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 .DS_Store
-.vscode/
-.idea/

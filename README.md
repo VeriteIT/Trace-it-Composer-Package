@@ -35,8 +35,29 @@ And tell them, in return:
 
 ## Step 0 — install
 
+This package is not on Packagist, so point Composer at the repository once:
+
+```json
+{
+  "repositories": [
+    { "type": "vcs", "url": "https://github.com/VeriteIT/trace-it-qr-php" }
+  ]
+}
+```
+
 ```bash
-composer require veriteit/trace-it-qr
+composer require veriteit/trace-it-qr:^1.0
+```
+
+If your build has no network access to GitHub, copy this directory into your project and use
+a path repository instead — same result, no fetch:
+
+```json
+{
+  "repositories": [
+    { "type": "path", "url": "vendor-src/trace-it-qr" }
+  ]
+}
 ```
 
 PHP 8.1+ and `ext-curl`. You also need `ext-gd` only if you choose to host the composite
@@ -259,6 +280,14 @@ stays lossless.
 The delivered file roughly doubles in size, because a QR's hard black-and-white edges are
 expensive for JPEG to encode. If that matters on listing pages, tag only the article-page
 thumbnail and leave the listings alone.
+
+---
+
+## Reference
+
+[PACKAGE-REFERENCE.md](PACKAGE-REFERENCE.md) has the method signatures, every error code,
+the configuration table and the badge layout options. This guide is the path through;
+that is the detail.
 
 ---
 
