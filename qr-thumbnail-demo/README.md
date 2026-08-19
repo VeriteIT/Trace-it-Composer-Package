@@ -6,6 +6,18 @@ with **no read or write access to the publisher's data or their S3 bucket**.
 
 The requirement this was built against is recorded in [REQUIREMENT.md](REQUIREMENT.md).
 
+## Start here, depending on who you are
+
+| You are | Read |
+|---|---|
+| **the publisher's dev team** | **[client-kit/README.md](client-kit/README.md)** — the integration guide. Four steps, copy-paste snippets, no internal detail. |
+| deploying the service | [DEPLOYMENT.md](DEPLOYMENT.md) — what to run, what to configure, and the settings that are unsafe by default. |
+| integrating in PHP | [packages/traceit-qr-php/](packages/traceit-qr-php/) — `composer require veriteit/trace-it-qr`. |
+| evaluating the approach | this file — how it works, what it costs, what was measured. |
+
+This README keeps the reasoning, the alternatives considered and the measurements. It is
+not what you hand a client.
+
 ## The three moving parts
 
 | | What happens | Where |
