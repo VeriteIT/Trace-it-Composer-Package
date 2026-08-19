@@ -121,6 +121,13 @@ final class Code implements \JsonSerializable
      * no reason to keep it in a JSON record when pngUrl fetches the same bytes and
      * a Store can cache them as a file.
      *
+     * `created` is deliberately NOT emitted either, and that one is load-bearing. It
+     * describes a single API call — whether THAT request minted a code and charged
+     * quota — not a property of the code. Persisting it means every later read out
+     * of the cache reports created = true, which is precisely the wrong answer to
+     * "did this cost me anything?". A value restored from cache therefore comes back
+     * with created = false, which is the truth: reading a cache costs nothing.
+     *
      * @return array<string,mixed>
      */
     public function jsonSerialize(): array
@@ -133,7 +140,6 @@ final class Code implements \JsonSerializable
             'title'     => $this->title,
             'folder'    => $this->folder,
             'createdAt' => $this->createdAt,
-            'created'   => $this->created,
             'qr'        => ['pngUrl' => $this->pngUrl, 'png' => ''],
         ];
     }

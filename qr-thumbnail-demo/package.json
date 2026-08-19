@@ -10,7 +10,7 @@
     "s3": "node server/fake-s3.js",
     "traceit": "node server/traceit-service.js",
     "verify": "node tools/verify-approaches.js",
-    "lint:php": "node -e \"const{execFileSync}=require('child_process'),fs=require('fs'),p=require('path');let bad=0;const walk=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?(e.name==='vendor'?[]:walk(p.join(d,e.name))):e.name.endsWith('.php')?[p.join(d,e.name)]:[]);for(const f of walk('php')){try{execFileSync('php',['-l',f],{stdio:'pipe'});console.log('  ok   '+f)}catch(e){bad++;console.log('  FAIL '+f);console.log(String(e.stdout||e.message))}}process.exit(bad?1:0)\"",
+    "lint:php": "node -e \"const{execFileSync}=require('child_process'),fs=require('fs'),pa=require('path');let bad=0;const skip=new Set(['vendor','node_modules','.git','data','verify-output']);const walk=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?(skip.has(e.name)?[]:walk(pa.join(d,e.name))):e.name.endsWith('.php')?[pa.join(d,e.name)]:[]);for(const f of walk('.')){try{execFileSync('php',['-l',f],{stdio:'pipe'});console.log('  ok   '+f)}catch(e){bad++;console.log('  FAIL '+f);console.log(String(e.stdout||e.message))}}console.log('  '+(bad?bad+' FAILED':'all clean'));process.exit(bad?1:0)\"",
     "reset": "node -e \"require('fs').rmSync('data',{recursive:true,force:true});console.log('demo data cleared')\"",
     "thumbs": "node tools/make-thumbnails.js",
     "start:composite": "node server/index.js",
