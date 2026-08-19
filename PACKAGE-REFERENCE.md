@@ -27,8 +27,11 @@ on first render by `qr()`.
 - `$publishedAt` is the **article's** publication date, ISO 8601. Omit it and the landing
   page falls back to the code's creation date, which is only the same thing when you publish
   live. An unreadable date is rejected (`invalid_published_at`), not silently replaced.
-- `$imageUrl` is usually unnecessary — the page script supplies it. Pass it only to make
-  `og:image` carry the code, or if you call `framedImage()` without an explicit URL.
+- `$imageUrl` is **required if you use composite mode** (snippet 3), and for `og:image` to
+  carry the code. It is never sent to Trace-It: it is recorded in your local cache so that
+  `framedImage()` knows which photo to composite. Omit it and `framedImage()` throws
+  `Misconfigured` unless you hand it the URL directly on every call. Not needed in the default
+  overlay mode, which composites nothing.
 
 ### `qr(string|int $postId, …): Code`
 
