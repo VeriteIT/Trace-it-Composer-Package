@@ -1,0 +1,31 @@
+# Line endings: LF in the repository AND in the working tree, on every platform.
+#
+# The repository half was never the problem — every blob here is already LF. The
+# working tree was, because core.autocrlf=true rewrites files to CRLF on checkout
+# while files written by other tools stay LF, leaving a checkout half one and half
+# the other. That is not cosmetic. It cost us a broken release once: a patch script
+# matched multi-line anchors with \n against a CRLF working tree, so only its
+# single-line edits applied and TraceIt.php was left passing an argument its
+# signature did not declare — lint-clean, broken at runtime (218582f).
+#
+# eol=lf rather than a bare text=auto, so the working tree is LF for everyone.
+# Any grep, sed or regex that assumes \n now behaves the same on every machine,
+# and PHP on the client's Linux servers sees exactly what is committed.
+* text=auto eol=lf
+
+# Never touch these: newline conversion corrupts them.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+
+# Better hunk headers when diffing PHP: git names the function a change is in.
+*.php diff=php
+*.md  diff=markdown
