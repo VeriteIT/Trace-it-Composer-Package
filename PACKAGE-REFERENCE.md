@@ -145,6 +145,34 @@ produces **one** create, not 500.
 | `jpegQuality` | `TRACEIT_JPEG_QUALITY` | `95` |
 | `layout` | — | see `Layout` |
 | `timeout` | — | `15` seconds |
+| `logger` | — | `trigger_error` |
+
+### `logger` is how you find out about silent degradation
+
+Nothing in this package throws for a *degradation*. `publish()` returns `null` rather
+than failing an editor's action, `qrOrNull()` returns `null` rather than breaking a
+template, a non-https `targetUrl` is dropped rather than rejected, and a lock that
+cannot be taken proceeds unlocked. Each is the right call on its own. Together they
+mean a feature can stop working with no exception anywhere.
+
+The default sink is `trigger_error`, which is dependency-free and honours
+`error_reporting` — but a production `php.ini` has `display_errors` off, so these
+messages only reach the PHP error log, which on a busy site nobody reads.
+
+The signature is PSR-3's, so a logger can be handed over with no adapter:
+
+```php
+$traceIt = new TraceIt([
+    'logger' => [$psr3Logger, 'log'],   // fn (string $level, string $message)
+]);
+```
+
+Levels are `warning` and `notice`. Messages arrive prefixed `trace-it: ` so they stay
+greppable. A logger that throws is caught and reported through `trigger_error` — a
+reporting channel must never take down the publish it was reporting on.
+
+**Worth alerting on:** `targetUrl … is not https`. It means those articles' verification
+pages have no *Original Source* button, and will not until the CMS passes an https URL.
 
 ### `allowedImageHosts` is a security control
 

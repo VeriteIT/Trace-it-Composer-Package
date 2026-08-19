@@ -32,6 +32,7 @@ final class TraceIt
 
     private Layout $layout;
     private int $jpegQuality;
+    private Log $log;
 
     /**
      * @param array{
@@ -43,7 +44,8 @@ final class TraceIt
      *   allowedImageHosts?: list<string>,
      *   jpegQuality?: int,
      *   layout?: Layout|array<string,mixed>,
-     *   timeout?: int
+     *   timeout?: int,
+     *   logger?: callable(string, string): void
      * } $config
      *
      * @throws Misconfigured
@@ -60,14 +62,23 @@ final class TraceIt
             );
         }
 
+        /*
+         * Built first, because everything below it reports through it. Nothing in
+         * this package throws for a degradation, so without a logger the only
+         * evidence of one is a trigger_error a production php.ini does not display.
+         */
+        $this->log = new Log($config['logger'] ?? null);
+
         $this->client = new Client(
             apiKey: $apiKey,
             baseUrl: $baseUrl,
             folder: (string) ($config['folder'] ?? getenv('TRACEIT_FOLDER') ?: ''),
             timeout: (int) ($config['timeout'] ?? 15),
+            log: $this->log,
         );
 
-        $this->store = $config['store'] ?? new FilesystemStore($config['cacheDir'] ?? null);
+        $this->store = $config['store']
+            ?? new FilesystemStore($config['cacheDir'] ?? null, $this->log);
 
         $this->allowedImageHosts = array_values($config['allowedImageHosts'] ?? array_filter(
             array_map('trim', explode(',', (string) (getenv('TRACEIT_ALLOWED_IMAGE_HOSTS') ?: '')))
@@ -105,9 +116,9 @@ final class TraceIt
      * monthly quota.
      *
      * NEVER LET THIS BREAK A PUBLISH. A QR code is not worth failing an editor's
-     * action over, so this returns null on failure instead of throwing, and logs
-     * through trigger_error. The code will be created on the next publish, or on
-     * first render via qr().
+     * action over, so this returns null on failure instead of throwing, and reports
+     * the reason through the configured `logger` (see Log). The code will be
+     * created on the next publish, or on first render via qr().
      *
      * @param string|int  $postId     Your own article ID.
      * @param string|null $articleUrl The live article URL. Must be https to be
@@ -130,7 +141,7 @@ final class TraceIt
         try {
             return $this->remember($postId, $articleUrl, $publishedAt, $imageUrl, forceRefresh: true);
         } catch (TraceItException $e) {
-            trigger_error('trace-it: publish failed: ' . $e->getMessage(), E_USER_WARNING);
+            $this->log->warning('publish failed: ' . $e->getMessage());
             return null;
         }
     }
@@ -165,7 +176,7 @@ final class TraceIt
         try {
             return $this->qr($postId, $articleUrl, $publishedAt, $imageUrl);
         } catch (TraceItException $e) {
-            trigger_error('trace-it: ' . $e->getMessage(), E_USER_NOTICE);
+            $this->log->notice($e->getMessage());
             return null;
         }
     }
