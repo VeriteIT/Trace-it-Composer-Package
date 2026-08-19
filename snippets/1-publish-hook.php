@@ -52,12 +52,17 @@ $traceIt->publish(
  *   published on the day you imported it. An unreadable date is rejected with
  *   400 invalid_published_at rather than silently replaced.
  *
- * - The IMAGE url is a fourth argument, and normally you do not need it: the page
- *   script already knows the thumbnail (it is the src it replaces) and sends it
- *   once on first render. Pass it only to make og:image carry the code, since a
- *   social crawler never runs the page script:
+ * - The IMAGE url is a fourth argument. You do not need it for the default overlay
+ *   mode, which composites nothing. You DO need it if you serve composites
+ *   yourself (snippet 3) or want og:image to carry the code, because a social
+ *   crawler never runs the page script:
  *
  *       $traceIt->publish($postId, $url, $publishedAt, $draft->thumbUrl);
+ *
+ *   It is never sent to Trace-It — we neither receive nor store your image URLs.
+ *   It is written to your local cache so framedImage() knows which photo to
+ *   composite; without it, framedImage() throws Misconfigured unless you hand it
+ *   the URL on every call.
  */
 
 /* --- if you want the outcome in your logs -------------------------------- */

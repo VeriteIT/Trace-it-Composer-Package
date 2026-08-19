@@ -3,12 +3,20 @@
 /**
  * SNIPPET 3 of 3 — OPTIONAL: serve the composited image from your own domain.
  * ===========================================================================
- * You do not need this. By default Verite IT serves the QR-embedded image and
- * there is nothing for you to host.
+ * You do not need this to put codes on your thumbnails. The page script's
+ * default overlay mode draws the hosted QR over your photo in the browser, with
+ * nothing for you to host.
  *
- * Take this on only if:
- *   - your Content-Security-Policy forbids third-party img-src, or
- *   - you would rather keep image traffic on your own CDN.
+ * Take this on if you need something only real compositing can give you:
+ *   - the code baked into the file a reader gets from "Save image",
+ *   - the code in social share previews, which never run JavaScript,
+ *   - image traffic kept on your own CDN, or
+ *   - a Content-Security-Policy that forbids third-party img-src.
+ *
+ * It runs on your server because that is where the photo already is. Trace-It
+ * never receives your image URLs, so it cannot composite a photo it has never
+ * seen — which also means you are not handing us your image bandwidth or a copy
+ * of every thumbnail you publish.
  *
  * Requires ext-gd.
  *
