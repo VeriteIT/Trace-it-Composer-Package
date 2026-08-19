@@ -26,7 +26,8 @@ $postId = $cms->publish($draft);               // your existing code
 // ↓↓↓ THE ADDITION ↓↓↓
 $traceIt->publish(
     $postId,
-    'https://www.example.lk/article/' . $postId   // must be https
+    'https://www.example.lk/article/' . $postId,      // must be https
+    $draft->publishedAt->format(DATE_ATOM)            // optional but recommended
 );
 // ↑↑↑ THE ADDITION ↑↑↑
 
@@ -44,17 +45,28 @@ $traceIt->publish(
  *   rather than failing the call — so you would still get a working code, just
  *   without the "Original Source" button on its landing page.
  *
- * - There is no third argument here on purpose. The image URL is not needed: the
- *   page script already knows it and sends it once on first render. Add it as a
- *   third argument ONLY if you want og:image to carry the code, because a social
- *   crawler never runs the page script:
+ * - The third argument is the ARTICLE's publication date, not the code's. Trace-It
+ *   shows it as "Date Published" on the verification page; omit it and that falls
+ *   back to when the code was created, which is only the same thing if you publish
+ *   live. Backfilling an archive without it would claim every old story was
+ *   published on the day you imported it. An unreadable date is rejected with
+ *   400 invalid_published_at rather than silently replaced.
  *
- *       $traceIt->publish($postId, $url, $draft->thumbUrl);
+ * - The IMAGE url is a fourth argument, and normally you do not need it: the page
+ *   script already knows the thumbnail (it is the src it replaces) and sends it
+ *   once on first render. Pass it only to make og:image carry the code, since a
+ *   social crawler never runs the page script:
+ *
+ *       $traceIt->publish($postId, $url, $publishedAt, $draft->thumbUrl);
  */
 
 /* --- if you want the outcome in your logs -------------------------------- */
 
-$code = $traceIt->publish($postId, 'https://www.example.lk/article/' . $postId);
+$code = $traceIt->publish(
+    $postId,
+    'https://www.example.lk/article/' . $postId,
+    $draft->publishedAt->format(DATE_ATOM)
+);
 
 if ($code === null) {
     // Already logged. Nothing to do — publishing succeeded regardless.

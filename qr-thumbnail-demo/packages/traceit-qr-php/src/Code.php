@@ -17,6 +17,9 @@ final class Code implements \JsonSerializable
      * @param string      $shortUrl  What the QR encodes. Scanning it hits this,
      *                               which redirects and attributes the visit.
      * @param string|null $targetUrl The "Original Source" button on the landing page.
+     * @param string|null $publishedAt When the ARTICLE was published, ISO 8601. Null
+     *                               means the landing page falls back to the code's
+     *                               own creation date.
      * @param string      $pngUrl    Durable, PUBLIC, hosted 1024px branded PNG.
      * @param string      $pngData   Base64 data URI of the same image, or '' —
      *                               see $this->pngBytes() for why it is often empty.
@@ -32,6 +35,7 @@ final class Code implements \JsonSerializable
         public readonly string $pngData,
         public readonly string $title = '',
         public readonly string $folder = '',
+        public readonly ?string $publishedAt = null,
         public readonly ?string $createdAt = null,
         public readonly bool $created = false,
     ) {
@@ -45,6 +49,7 @@ final class Code implements \JsonSerializable
             postId:    (string) ($data['postId'] ?? ''),
             shortUrl:  (string) ($data['shortUrl'] ?? ''),
             targetUrl: isset($data['targetUrl']) ? (string) $data['targetUrl'] : null,
+            publishedAt: isset($data['publishedAt']) ? (string) $data['publishedAt'] : null,
             pngUrl:    (string) ($data['qr']['pngUrl'] ?? ''),
             pngData:   (string) ($data['qr']['png'] ?? ''),
             title:     (string) ($data['title'] ?? ''),
@@ -137,6 +142,7 @@ final class Code implements \JsonSerializable
             'postId'    => $this->postId,
             'shortUrl'  => $this->shortUrl,
             'targetUrl' => $this->targetUrl,
+            'publishedAt' => $this->publishedAt,
             'title'     => $this->title,
             'folder'    => $this->folder,
             'createdAt' => $this->createdAt,

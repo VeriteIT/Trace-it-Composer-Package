@@ -77,6 +77,14 @@ async function ensureStack() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'traceit-verify-'));
   process.env.TRACEIT_DATA_DIR = dataDir;
 
+  /*
+   * Lazy minting is OFF by default now — opting in to a public endpoint that can
+   * spend quota should be deliberate. This suite exercises that path on purpose
+   * (the seeded articles never went through the publish webhook), so it turns it
+   * on for its own private stack rather than depending on ambient config.
+   */
+  process.env.ALLOW_LAZY_MINT = 'true';
+
   // Required AFTER TRACEIT_DATA_DIR is set — store.js reads it at load time.
   const apps = [
     [require('../server/fake-s3'), 3001],

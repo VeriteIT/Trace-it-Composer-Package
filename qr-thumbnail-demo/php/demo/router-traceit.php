@@ -55,7 +55,7 @@ $ALLOWED_ORIGINS = array_values(array_filter(array_map('trim', explode(',',
 ))));
 
 $WEBHOOK_SECRET  = getenv('TRACEIT_WEBHOOK_SECRET') ?: 'dev-webhook-secret';
-$ALLOW_LAZY_MINT = (getenv('ALLOW_LAZY_MINT') ?: 'true') !== 'false';
+$ALLOW_LAZY_MINT = (getenv('ALLOW_LAZY_MINT') ?: 'false') === 'true';
 $ARTICLE_URL_TPL = getenv('ARTICLE_URL_TEMPLATE') ?: 'http://localhost:3000/article/{id}';
 
 /**

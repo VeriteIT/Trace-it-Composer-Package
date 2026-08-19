@@ -20,7 +20,10 @@ Verite IT will give you three things. Ask if you do not have them:
 |---|---|---|
 | API key | `sk_live_…` | your server config — **never in a page** |
 | Your Trace-It base URL | `https://acme.trace-it.io` | your server config |
-| Script URL | `https://qr.trace-it.io/js/traceit-qr.js` | one `<script>` tag |
+| Script URL | Verite IT will give you the real host | one `<script>` tag |
+
+> `YOUR-TRACEIT-HOST` throughout this document is a placeholder. Replace it with the
+> host Verite IT gives you — it is not a real address and will not resolve.
 
 And tell them, in return:
 
@@ -65,12 +68,26 @@ $postId = $cms->publish($draft);                  // your existing code
 
 $traceIt->publish(
     $postId,
-    'https://www.example.lk/article/' . $postId   // must be https
+    'https://www.example.lk/article/' . $postId,  // must be https
+    $draft->publishedAt->format(DATE_ATOM)        // optional, see below
 );
 ```
 
-That is the whole payload: the post ID and the live article URL. No article body, no
-images, no credentials.
+That is the whole payload: the post ID, the live article URL, and optionally when the
+article was published. No article body, no images, no credentials.
+
+### Send the publication date if you have it
+
+Trace-It shows it as **Date Published** on the verification page a scan lands on. Leave it
+out and that falls back to when the code was created — correct if you are publishing live,
+wrong if you ever backfill an archive, which would then claim every old story was published
+on the day you imported it.
+
+Any ISO 8601 form works: `2026-02-14` or `2026-02-14T09:30:00Z`.
+
+A date it cannot read is **rejected** (`400 invalid_published_at`) rather than quietly
+replaced, because it is rendered as a factual claim. A mistyped year like `20226` is caught
+by the same check.
 
 **It never throws.** If our service is unreachable it returns `null` and logs — a QR code
 is not worth failing an editor's publish over. The code gets created on the next publish,
@@ -113,7 +130,7 @@ One attribute, so the page script knows which article each image belongs to:
 Then one script tag, once, in your layout:
 
 ```html
-<script src="https://qr.trace-it.io/js/traceit-qr.js"
+<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
         data-selector="img.story-thumb"></script>
 ```
 
@@ -147,7 +164,7 @@ half-applied.
 If adding `data-article-id` is awkward, the script can take the ID from the URL instead:
 
 ```html
-<script src="https://qr.trace-it.io/js/traceit-qr.js"
+<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
         data-selector="img.story-thumb"
         data-id-from-path="/article/([A-Za-z0-9._-]+)"></script>
 ```
@@ -168,7 +185,7 @@ $traceIt->framedImage($_GET['id'], null, $_GET['v'] ?? '1')->send($_GET['id']);
 Then point the script at your own origin:
 
 ```html
-<script src="https://qr.trace-it.io/js/traceit-qr.js"
+<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
         data-selector="img.story-thumb"
         data-service="https://www.example.lk/traceit"></script>
 ```
@@ -185,12 +202,12 @@ composite URL directly:
 
 ```php
 <meta property="og:image"
-      content="https://qr.trace-it.io/v1/framed/<?= htmlspecialchars($article->id) ?>.jpg?src=<?= urlencode($article->thumbUrl) ?>">
+      content="https://YOUR-TRACEIT-HOST/v1/framed/<?= htmlspecialchars($article->id) ?>.jpg?src=<?= urlencode($article->thumbUrl) ?>">
 ```
 
 The `?src=` matters here. A crawler has never run your page, so it may be the first thing
 ever to ask for that article's composite, and we might not know which photo it is yet. If
-you would rather not have the parameter in the tag, pass the image URL as a third argument
+you would rather not have the parameter in the tag, pass the image URL as a fourth argument
 to `publish()` and we will already know.
 
 ---
