@@ -19,7 +19,10 @@ namespace VeriteIt\TraceItQr;
  *   GET  /api/v1/qr/by-post/{postId}   200 the code, qr.png empty
  *                                      404 { error: { code: 'not_found' } }
  *
- *   Errors { error: { code, message } }
+ *   Errors { error: { code, message } } — codes seen in practice:
+ *          invalid_post_id, invalid_target_url, invalid_published_at,
+ *          unauthorized, rate_limited, quota_exceeded, post_id_conflict,
+ *          id_conflict, server_misconfigured, internal_error
  *
  * SERVER-SIDE ONLY. Every call here sends the secret key, so this class must
  * never be reachable from a browser. Anyone who can read the key can mint
@@ -116,6 +119,10 @@ final class Client
      *        anything else with 400 invalid_target_url. It is optional, so a
      *        non-https URL is dropped rather than allowed to fail the whole call:
      *        the QR still works, because it encodes shortUrl, not this.
+     * @param string|null $publishedAt When the ARTICLE was published, ISO 8601
+     *        (2026-02-14, or 2026-02-14T09:30:00Z). Shown as "Date Published" on the
+     *        verification page. Omit it and that falls back to the code's creation
+     *        date, which is only the same thing for a CMS publishing live.
      * @param list<string> $followUpPages
      *
      * @throws ApiError|TransportError|InvalidPostId
@@ -123,6 +130,7 @@ final class Client
     public function create(
         string|int $postId,
         ?string $targetUrl = null,
+        ?string $publishedAt = null,
         array $followUpPages = [],
     ): Code {
         $id = PostId::from($postId);
@@ -152,6 +160,22 @@ final class Client
                     E_USER_NOTICE
                 );
             }
+        }
+
+        /*
+         * When the ARTICLE was published, as opposed to when we registered it.
+         * Trace-It renders this as "Date Published" on the verification page, and
+         * without it that falls back to the code's creation date — fine for a CMS
+         * publishing live, wrong for a backfilled archive, which would otherwise
+         * claim every old story was published on the day it was imported.
+         *
+         * Passed straight through rather than parsed here. Trace-It rejects an
+         * unreadable date with 400 invalid_published_at rather than quietly
+         * substituting one, and a second opinion in this package could only
+         * disagree with it.
+         */
+        if ($publishedAt !== null && $publishedAt !== '') {
+            $body['publishedAt'] = $publishedAt;
         }
 
         if ($this->folder !== '') {
@@ -196,6 +220,7 @@ final class Client
     public function ensure(
         string|int $postId,
         ?string $targetUrl = null,
+        ?string $publishedAt = null,
         array $followUpPages = [],
     ): Code {
         $found = $this->findByPostId($postId);
@@ -203,7 +228,7 @@ final class Client
             return $found;
         }
 
-        return $this->create($postId, $targetUrl, $followUpPages);
+        return $this->create($postId, $targetUrl, $publishedAt, $followUpPages);
     }
 
     /**

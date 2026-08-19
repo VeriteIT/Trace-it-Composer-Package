@@ -112,16 +112,23 @@ final class TraceIt
      * @param string|int  $postId     Your own article ID.
      * @param string|null $articleUrl The live article URL. Must be https to be
      *                                used; a non-https URL is dropped, not fatal.
-     * @param string|null $imageUrl   Public thumbnail URL. Only needed if you use
-     *                                framedImage(); stored for later.
+     * @param string|null $publishedAt When the ARTICLE was published, ISO 8601.
+     *                                Shown as "Date Published" on the verification
+     *                                page. Omit it and that falls back to the code's
+     *                                creation date — right when you publish live,
+     *                                wrong when backfilling an archive.
+     * @param string|null $imageUrl   Public thumbnail URL. Needed only for
+     *                                framedImage(), or to let og:image carry the
+     *                                code; remembered either way.
      */
     public function publish(
         string|int $postId,
         ?string $articleUrl = null,
+        ?string $publishedAt = null,
         ?string $imageUrl = null,
     ): ?Code {
         try {
-            return $this->remember($postId, $articleUrl, $imageUrl, forceRefresh: true);
+            return $this->remember($postId, $articleUrl, $publishedAt, $imageUrl, forceRefresh: true);
         } catch (TraceItException $e) {
             trigger_error('trace-it: publish failed: ' . $e->getMessage(), E_USER_WARNING);
             return null;
@@ -142,19 +149,21 @@ final class TraceIt
     public function qr(
         string|int $postId,
         ?string $articleUrl = null,
+        ?string $publishedAt = null,
         ?string $imageUrl = null,
     ): Code {
-        return $this->remember($postId, $articleUrl, $imageUrl, forceRefresh: false);
+        return $this->remember($postId, $articleUrl, $publishedAt, $imageUrl, forceRefresh: false);
     }
 
     /** Same as qr() but returns null instead of throwing. */
     public function qrOrNull(
         string|int $postId,
         ?string $articleUrl = null,
+        ?string $publishedAt = null,
         ?string $imageUrl = null,
     ): ?Code {
         try {
-            return $this->qr($postId, $articleUrl, $imageUrl);
+            return $this->qr($postId, $articleUrl, $publishedAt, $imageUrl);
         } catch (TraceItException $e) {
             trigger_error('trace-it: ' . $e->getMessage(), E_USER_NOTICE);
             return null;
@@ -235,6 +244,7 @@ final class TraceIt
     private function remember(
         string|int $postId,
         ?string $articleUrl,
+        ?string $publishedAt,
         ?string $imageUrl,
         bool $forceRefresh,
     ): Code {
@@ -251,7 +261,7 @@ final class TraceIt
 
         // Locked, because an article going live to many readers at once must
         // produce ONE create, not one per request.
-        return $this->store->lock($key, function () use ($key, $articleUrl, $imageUrl): Code {
+        return $this->store->lock($key, function () use ($key, $articleUrl, $publishedAt, $imageUrl): Code {
             // Re-check inside the lock: whoever held it before us has usually
             // already done the work, and creating again would spend quota twice.
             $cached = $this->store->get($key);
@@ -260,7 +270,7 @@ final class TraceIt
                 return Code::fromApi($cached['code']);
             }
 
-            $code = $this->client->ensure($key, $articleUrl);
+            $code = $this->client->ensure($key, $articleUrl, $publishedAt);
 
             $record = [
                 'postId'    => $key,

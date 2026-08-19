@@ -18,7 +18,7 @@
  *
  * …and point the page script at your own origin:
  *
- *   <script src="https://qr.trace-it.io/js/traceit-qr.js"
+ *   <script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
  *           data-selector="img.story-thumb"
  *           data-service="https://www.example.lk/traceit"></script>
  * ===========================================================================

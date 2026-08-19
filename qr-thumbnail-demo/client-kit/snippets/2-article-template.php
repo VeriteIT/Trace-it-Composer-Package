@@ -40,7 +40,7 @@
 <!-- C. The script tag. Once, in your layout, before </body>.              -->
 <!-- ===================================================================== -->
 
-<script src="https://qr.trace-it.io/js/traceit-qr.js"
+<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
         data-selector="img.story-thumb"></script>
 
 <!--
@@ -70,7 +70,7 @@
 <!-- If adding data-article-id is awkward, let the script read the ID from the
      URL instead. Adjust the pattern to match your article routes. -->
 
-<script src="https://qr.trace-it.io/js/traceit-qr.js"
+<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
         data-selector="img.story-thumb"
         data-id-from-path="/article/([A-Za-z0-9._-]+)"></script>
 
@@ -83,11 +83,11 @@
      they need the composite URL directly. Goes in <head>. -->
 
 <meta property="og:image"
-      content="https://qr.trace-it.io/v1/framed/<?= htmlspecialchars($article->id) ?>.jpg?src=<?= urlencode($article->thumbUrl) ?>">
+      content="https://YOUR-TRACEIT-HOST/v1/framed/<?= htmlspecialchars($article->id) ?>.jpg?src=<?= urlencode($article->thumbUrl) ?>">
 
 <!--
   The ?src= matters here. A crawler has never run your page, so it may be the
   first thing ever to ask for this article's composite and we might not know which
-  photo it is yet. Pass the image URL as a third argument to publish() and you can
+  photo it is yet. Pass the image URL as a fourth argument to publish() and you can
   drop the parameter.
 -->

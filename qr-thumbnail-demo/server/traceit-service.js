@@ -59,7 +59,7 @@ const WEBHOOK_SECRET = process.env.TRACEIT_WEBHOOK_SECRET || 'dev-webhook-secret
 
 // Set false in production once the CMS webhook is live. Then this service can
 // only ever SERVE codes, never create them, and quota exposure drops to zero.
-const ALLOW_LAZY_MINT = process.env.ALLOW_LAZY_MINT !== 'false';
+const ALLOW_LAZY_MINT = process.env.ALLOW_LAZY_MINT === 'true';
 
 // Where a scan should land. The publisher's article URL is derived from the ID.
 const ARTICLE_URL_TEMPLATE =
