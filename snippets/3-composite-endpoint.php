@@ -26,7 +26,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../../vendor/autoload.php';   // adjust to your autoloader
+require __DIR__ . '/vendor/autoload.php';   // adjust to your project's autoloader
 
 use VeriteIt\TraceItQr\TraceIt;
 use VeriteIt\TraceItQr\TraceItException;
