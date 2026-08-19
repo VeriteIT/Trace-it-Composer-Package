@@ -40,7 +40,7 @@ This package is not on Packagist, so point Composer at the repository once:
 ```json
 {
   "repositories": [
-    { "type": "vcs", "url": "https://github.com/VeriteIT/trace-it-qr-php" }
+    { "type": "vcs", "url": "https://github.com/VeriteIT/Trace-it-Composer-Package" }
   ]
 }
 ```
