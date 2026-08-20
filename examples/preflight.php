@@ -74,8 +74,10 @@ extension_loaded('curl')
     : result('FAIL', 'ext-curl', 'not loaded', 'Enable extension=curl in php.ini. Required.');
 
 extension_loaded('gd')
-    ? result('PASS', 'ext-gd', 'loaded — server-side compositing available')
-    : result('SKIP', 'ext-gd', 'not loaded — only needed if you host the composite endpoint');
+    ? result('PASS', 'ext-gd', 'loaded')
+    : result('FAIL', 'ext-gd', 'not loaded',
+        'Enable extension=gd in php.ini. Required: compositing is what puts the code into '
+        . 'the file a reader saves, and there is no mode that works without it.');
 
 /*
  * The single most common failure in a fresh PHP install, and the error it produces

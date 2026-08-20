@@ -31,6 +31,12 @@ And tell them, in return:
   Required: the service refuses to fetch images from anywhere else.
 - **The format of your post IDs.** See step 2. A numeric ID is ideal.
 
+> **What this integration is for.** The goal is that a reader who does *Save image as…* on
+> one of your thumbnails gets a file with the Trace-It code **in it**. That only works if
+> the code is in the pixels, so you will need **`ext-gd`** and one small endpoint of your
+> own (Step 4). All five steps are one integration; there is no partial mode that puts a
+> code on screen without putting it in the file.
+
 ---
 
 ## Step 0 — install
@@ -140,37 +146,37 @@ rewritten, because rewriting could quietly map two different articles onto one Q
 
 ## Step 3 — mark the thumbnails in your template
 
-Two attributes: which article the image belongs to, and where its code lives.
+One attribute, so the script knows which article each image belongs to:
 
 ```php
 <img src="<?= htmlspecialchars($article->thumbUrl) ?>"
      class="story-thumb"
-     data-article-id="<?= htmlspecialchars($article->id) ?>"
-     data-traceit-qr="<?= htmlspecialchars($traceIt->qrPngUrl($article->id) ?? '') ?>">
+     data-article-id="<?= htmlspecialchars($article->id) ?>">
 ```
-
-`data-traceit-qr` is the QR's public PNG URL. It is public by design and carries no
-credentials, which is the point: your API key is a secret and must never reach a browser,
-so the lookup happens in PHP where the key already lives. The script then makes no API
-call at all — the only request is the image itself.
-
-Use `qrPngUrl()` here, not `qr()`. `qr()` throws, and a template is the last place you want
-an exception: `qrPngUrl()` returns `null` on any failure, so a Trace-It outage costs you a
-badge rather than the article page. It reads from the local cache after the first call, so
-this is not a request per render. When it returns `null` the attribute renders empty and
-that thumbnail simply keeps its plain photo.
-
-> Using composite mode (Step 4) instead? Then `data-traceit-qr` is not needed — drop it and
-> keep only `data-article-id`.
 
 Then one script tag, once, in your layout:
 
 ```html
 <script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
-        data-selector="img.story-thumb"></script>
+        data-selector="img.story-thumb"
+        data-service="https://www.example.lk/traceit"></script>
 ```
 
+`data-service` points at **your** composite endpoint from Step 4, and it is required.
+Without it the script has nowhere to fetch a coded image from, logs one console error and
+leaves every photo exactly as it found it.
+
 That is the entire frontend integration.
+
+### What it does to your page
+
+It changes **one attribute** — `src`, to an image with identical pixel dimensions. It adds
+no elements, injects no CSS and wraps nothing, so your layout and your stylesheets are
+untouched.
+
+The swap only happens once the coded image has actually loaded, so if a code is missing or
+the endpoint is slow or unreachable, your original photo simply stays. Nothing is ever
+half-applied.
 
 ### Only the images you want
 
@@ -186,36 +192,20 @@ and inline body images are unaffected, with no extra work from you.
 The last one is for a sponsored photo, a wire-service image you may not alter, or a
 graphic where a badge would cover something that matters.
 
-### Two modes, and what each does to your page
+### Why the code goes into the pixels, and not over them
 
-Which one you get depends on a single attribute, `data-service`.
+The obvious approach — draw the QR over the photo as a separate element — puts a code on
+the screen but not in the file. *Save image as…* is a browser menu item: no DOM event
+fires for it and no script runs during it. It writes the bytes of the resource the `<img>`
+is displaying. So the code has to **be** in those bytes; it cannot be faked from the page,
+in any browser.
 
-**Overlay — the default.** Nothing for you to host and no `ext-gd`. The script draws the
-hosted QR PNG over your photo in the browser. To position a badge it has to add one element,
-so it inserts the code as an absolutely-positioned `<img>` and wraps your thumbnail in a
-`position:relative` `<span>` — unless your theme already puts the image alone inside a
-positioned element, such as a `<figure>` or a fixed-ratio box, in which case it uses that and
-leaves the DOM as it found it. Everything it inserts is styled inline; no stylesheet is
-injected, and your own classes, sizing and position are untouched.
+Swapping `src` for a composited image is the only thing that satisfies that, and *Copy
+image*, drag-to-desktop, printing and `og:image` all follow from the same fact.
 
-**Composite — when you set `data-service`.** Changes **one attribute**, `src`, to an image
-with identical pixel dimensions. Adds no elements, injects no CSS and wraps nothing. It is
-also the only mode where the code survives a right-click → *Save image*, because the pixels
-are burned in. It requires you to host the endpoint in Step 4.
-
-| | Overlay | Composite |
-|---|---|---|
-| Anything for you to host | no | yes, Step 4 |
-| Needs `ext-gd` | no | yes |
-| Touches your DOM | one wrapper + one `<img>` | one attribute |
-| Code survives Save-as | no | yes |
-| Code in social previews | no | yes, Step 5 |
-
-If your layout is pixel-sensitive enough that a wrapper is a problem, that is the reason to
-choose composite mode.
-
-Either way, if a code is missing or our service is slow or unreachable, your original photo
-simply stays. Nothing is ever half-applied.
+This is why there is one mode and not two. An overlay mode existed early on and was
+removed: it could never produce a coded file, and it cost a wrapper element around every
+thumbnail to position the badge.
 
 ### Every option
 
@@ -224,26 +214,26 @@ On the `<script>` tag:
 | Attribute | Default | What it does |
 |---|---|---|
 | `data-selector` | `img[data-article-id]` | Which images to touch. Nothing outside it is ever modified. |
-| `data-service` | *(unset)* | Set it to switch to composite mode, pointing at your own origin. |
-| `data-corner` | `bottom-right` | Which corner the badge sits in. Also `bottom-left`, `top-right`, `top-left`. Overlay only. |
-| `data-badge-size` | `0.22` | Badge width as a fraction of the image, clamped to `0.08`–`0.5`. Overlay only. |
-| `data-version` | `1` | Cache-buster for composite mode. Bump it when the badge design changes. |
+| `data-service` | *(unset)* | **Required.** Your composite endpoint from Step 4. Unset, the script does nothing. |
+| `data-version` | `1` | Cache-buster. Bump it when the badge design changes. |
 | `data-id-from-path` | *(unset)* | Regex to take the article ID from the URL instead of an attribute. |
 | `data-auto` | *(on)* | `off` stops it running automatically; call `window.TraceItQR.embedAll()` yourself. |
+
+Badge position and size are decided when the image is composited, so they are server-side
+settings — see `Layout` in [PACKAGE-REFERENCE.md](PACKAGE-REFERENCE.md), not attributes here.
 
 On each `<img>`:
 
 | Attribute | What it does |
 |---|---|
 | `data-article-id` | The article this image belongs to. |
-| `data-traceit-qr` | The code's public PNG URL. Overlay mode only. |
 | `data-traceit="off"` | Leave this one image alone. |
 
 `window.TraceItQR` also exposes `embed(img)` for a single image and `config` for what the
-script actually resolved, which is the quickest way to confirm the mode you think you are in:
+script actually resolved, which is the quickest way to confirm it is pointed where you think:
 
 ```js
-TraceItQR.config.mode   // "overlay" or "composite"
+TraceItQR.config.service   // your endpoint, or "" if data-service is missing
 ```
 
 Call `TraceItQR.embedAll()` again after you inject thumbnails at runtime — infinite scroll,
@@ -264,14 +254,17 @@ If adding `data-article-id` is awkward, the script can take the ID from the URL 
 
 ---
 
-## Step 4 — optional: serve the composite yourself
+## Step 4 — serve the composite (this is what makes Save-as work)
 
-Skip this unless you need one of the things only compositing gives you:
+**Do not skip this one.** Steps 1–3 put a code on the page; this step puts it in the
+*file*. Without it, a reader who saves or shares your thumbnail gets the photo with no
+code — which is the thing this integration exists to prevent.
 
-- the code baked into the file a reader gets from **Save image**,
+It is also what gives you:
+
 - the code in **social share previews** (Step 5),
-- image traffic kept on **your own CDN**, or
-- a **Content-Security-Policy** that forbids third-party `img-src`.
+- image traffic kept on **your own CDN**, and
+- compatibility with a **Content-Security-Policy** that forbids third-party `img-src`.
 
 Compositing happens on your server because that is where the photo already is. Trace-It
 never receives your image URLs, so it cannot burn a code into a photo it has never seen —
@@ -283,24 +276,18 @@ every thumbnail you publish.
 $traceIt->framedImage($_GET['id'], null, $_GET['v'] ?? '1')->send($_GET['id']);
 ```
 
-Then point the script at your own origin:
-
-```html
-<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
-        data-selector="img.story-thumb"
-        data-service="https://www.example.lk/traceit"></script>
-```
-
-…with `/traceit/v1/framed/{id}.jpg` rewritten to that script. Needs `ext-gd`, and
-`allowedImageHosts` set in your config to the hostnames your photos come from.
+Route `/traceit/v1/framed/{id}.jpg` to that script, and that path is what `data-service`
+in Step 3 points at. Needs `ext-gd`, and `allowedImageHosts` set in your config to the
+hostnames your photos come from — without it the fetcher would take any URL a caller
+supplies, which is an SSRF hole.
 
 ---
 
 ## Step 5 — optional: put the code in social share previews
 
 **Requires Step 4.** Facebook, X and WhatsApp read `og:image` and never run page
-JavaScript, so a crawler never sees an overlay. The tag has to point at a composite that
-already exists as a file, which means your own endpoint:
+JavaScript, so a crawler never sees the `src` swap that Step 3 performs. The tag has to
+point at a composite that already exists as a file, which means your own endpoint:
 
 ```php
 <meta property="og:image"

@@ -1,17 +1,23 @@
 <?php
 
 /**
- * SNIPPET 3 of 3 — OPTIONAL: serve the composited image from your own domain.
+ * SNIPPET 3 of 3 — serve the composited image from your own domain.
  * ===========================================================================
- * You do not need this to put codes on your thumbnails. The page script's
- * default overlay mode draws the hosted QR over your photo in the browser, with
- * nothing for you to host.
+ * THIS IS THE ONE THAT MAKES SAVE-AS WORK, so it is not optional. Snippets 1
+ * and 2 register the code and point the page at this endpoint; this is what
+ * actually puts the code into the pixels a reader downloads.
  *
- * Take this on if you need something only real compositing can give you:
- *   - the code baked into the file a reader gets from "Save image",
+ * "Save image as…" is a browser menu item: no DOM event fires for it and no
+ * script runs during it. It writes the bytes of the resource the <img> is
+ * displaying. So a code drawn OVER a photo is on the screen but never in the
+ * saved file, and no amount of frontend work changes that. Compositing is the
+ * only thing that satisfies the requirement.
+ *
+ * It also gives you:
  *   - the code in social share previews, which never run JavaScript,
- *   - image traffic kept on your own CDN, or
- *   - a Content-Security-Policy that forbids third-party img-src.
+ *   - image traffic kept on your own CDN, and
+ *   - compatibility with a Content-Security-Policy that forbids third-party
+ *     img-src.
  *
  * It runs on your server because that is where the photo already is. Trace-It
  * never receives your image URLs, so it cannot composite a photo it has never
