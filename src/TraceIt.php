@@ -128,9 +128,15 @@ final class TraceIt
      *                                page. Omit it and that falls back to the code's
      *                                creation date — right when you publish live,
      *                                wrong when backfilling an archive.
-     * @param string|null $imageUrl   Public thumbnail URL. Needed only for
-     *                                framedImage(), or to let og:image carry the
-     *                                code; remembered either way.
+     * @param string|null $imageUrl   Public thumbnail URL. Usually unnecessary —
+     *                                prefer handing it to framedImage(), which runs
+     *                                inside your CMS and can look it up fresh.
+     *                                Supplied here it is remembered locally as a
+     *                                fallback for a composite endpoint that cannot
+     *                                reach your CMS, and is only refreshed when
+     *                                publish() is next called with a different
+     *                                value — so it goes stale if a photo is
+     *                                replaced without a re-publish.
      */
     public function publish(
         string|int $postId,
@@ -198,9 +204,17 @@ final class TraceIt
      * This is the only way a native "Save image as…" can produce a QR-embedded
      * file. Needs ext-gd, and the image host must be in allowedImageHosts.
      *
-     * The result is cached under the post ID plus a design version, so bump
-     * $version whenever you change the badge — otherwise browsers holding an
-     * `immutable` copy will never see the change.
+     * PASS $imageUrl. This runs in an endpoint that has the post ID and sits
+     * inside your CMS, so resolving the photo is a local lookup — and one that is
+     * always current. Omitting it falls back to whatever URL publish() last
+     * recorded, which is only refreshed on a re-publish and therefore points at
+     * the old file after a photo is replaced. The fallback exists for endpoints
+     * with no CMS access, not as the normal path.
+     *
+     * Responses are served `immutable`, so bump $version whenever the badge design
+     * changes — and note that a REPLACED PHOTO is invisible to anyone already
+     * holding a composite for the same reason. If photo swaps are routine, make
+     * $version carry something per-article rather than one global number.
      *
      * @throws TraceItException
      */

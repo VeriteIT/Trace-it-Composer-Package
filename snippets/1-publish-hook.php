@@ -52,17 +52,20 @@ $traceIt->publish(
  *   published on the day you imported it. An unreadable date is rejected with
  *   400 invalid_published_at rather than silently replaced.
  *
- * - The IMAGE url is a fourth argument, and it is REQUIRED. It is what lets
- *   snippet 3 composite the code into the photo, and what lets og:image carry
- *   the code for a social crawler that never runs the page script. Omit it and
- *   framedImage() has no photo to work from and throws Misconfigured:
+ * - The IMAGE url is an optional fourth argument, and most integrations should
+ *   leave it out. Snippet 3 looks the photo up from your own data instead, which
+ *   is a local query in an endpoint that already has the post ID — and which
+ *   cannot go stale the way a remembered URL does when an editor replaces a
+ *   photo without re-publishing.
+ *
+ *   Pass it only if your composite endpoint cannot reach your CMS — a separate
+ *   host, a static deployment — in which case it is the only thing framedImage()
+ *   has to work from:
  *
  *       $traceIt->publish($postId, $url, $publishedAt, $draft->thumbUrl);
  *
- *   It is never sent to Trace-It — we neither receive nor store your image URLs.
- *   It is written to your local cache so framedImage() knows which photo to
- *   composite; without it, framedImage() throws Misconfigured unless you hand it
- *   the URL on every call.
+ *   Either way it is never sent to Trace-It: we neither receive nor store your
+ *   image URLs. It is written to your local cache and nowhere else.
  */
 
 /* --- if you want the outcome in your logs -------------------------------- */
