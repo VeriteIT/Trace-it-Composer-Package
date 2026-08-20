@@ -27,10 +27,13 @@ on first render by `qr()`.
 - `$publishedAt` is the **article's** publication date, ISO 8601. Omit it and the landing
   page falls back to the code's creation date, which is only the same thing when you publish
   live. An unreadable date is rejected (`invalid_published_at`), not silently replaced.
-- `$imageUrl` is **required**. It is what `framedImage()` composites, and what lets
-  `og:image` carry the code. It is never sent to Trace-It: it is recorded in your local
-  cache so that `framedImage()` knows which photo to use. Omit it and `framedImage()`
-  throws `Misconfigured` unless you hand it the URL directly on every call.
+- `$imageUrl` is **optional, and usually unnecessary**. Prefer passing the photo URL to
+  `framedImage()` directly: that endpoint runs in your CMS and already has the post ID, so
+  it is a local lookup, and it cannot go stale. This argument records the URL in your local
+  cache as a fallback for a composite endpoint that cannot reach your CMS, and it is only
+  refreshed when `publish()` is next called with a different value — so replacing a photo
+  without re-publishing leaves it pointing at the old file. Never sent to Trace-It either
+  way.
 
 ### `qr(string|int $postId, …): Code`
 

@@ -68,14 +68,38 @@ $traceIt = new TraceIt([
 $postId = (string) ($_GET['id'] ?? '');
 
 /*
+ * Look the photo up here, from your own data.
+ *
+ * This endpoint runs inside your CMS and the post ID is right there in the query
+ * string, so this is a local lookup you are effectively already making. Passing
+ * the URL explicitly is better than letting the package remember one for you, and
+ * the reason is not tidiness:
+ *
+ * A remembered URL is only refreshed when publish() is next called with a
+ * different one. Replace an article's photo without re-publishing and the
+ * remembered value still points at the old file, so every composite keeps
+ * carrying the old picture. A lookup cannot go stale.
+ *
+ * Adapt this line to your CMS. If this endpoint genuinely cannot reach it — a
+ * separate host, a static deployment — pass null instead and give publish() the
+ * URL as its fourth argument; framedImage() falls back to that.
+ */
+$article = $cms->findByPostId($postId);   // <- your existing lookup
+
+/*
  * Badge design version. Composites are served `immutable`, so a browser that has
  * one will never ask again. Bump this whenever the badge design changes, or a
  * redesign stays invisible to everyone who has already loaded the page.
+ *
+ * The same applies to a REPLACED PHOTO: readers holding a composite will not
+ * re-request it. If swapping photos after publication is common for you, put
+ * something per-article in here — a photo id, or a hash of the URL — rather than
+ * one global number, or a swap stays invisible until you bump it for everybody.
  */
 $version = (string) ($_GET['v'] ?? '1');
 
 try {
-    $framed = $traceIt->framedImage($postId, null, $version);
+    $framed = $traceIt->framedImage($postId, $article->thumbUrl, $version);
 
     // Sends Content-Type, Content-Length, Cache-Control: immutable, and a
     // Content-Disposition filename so the save dialog offers something sensible.

@@ -118,14 +118,12 @@
       content="https://www.example.lk/traceit/v1/framed/<?= htmlspecialchars($article->id) ?>.jpg?v=1">
 
 <!--
-  For this to resolve, your publish hook must already know which photo belongs to
-  the article — pass the image URL as the fourth argument to publish():
+  Nothing extra is needed. A crawler hitting this URL reaches the same endpoint
+  from snippet 3, which looks the article up and composites it. A crawler's first
+  request is no different from a reader's — neither has run your page.
 
-    $traceIt->publish($article->id, $article->url, $article->publishedAt,
-                      $article->thumbUrl);
-
-  framedImage() reads that URL back out of its local cache, so a crawler's very
-  first request composites correctly even though it has never run your page.
-  Without it there is nothing to composite from: the tag 404s and the crawler
-  falls back to your plain photo.
+  The one exception is if your composite endpoint cannot reach your CMS and you
+  took the publish()-fourth-argument fallback. Then that value is the only thing
+  it has to work from, and without it the tag 404s and the crawler falls back to
+  your plain photo.
 -->

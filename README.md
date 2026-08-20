@@ -273,13 +273,28 @@ every thumbnail you publish.
 
 ```php
 // GET /qr-image.php?id=108-347979&v=1
-$traceIt->framedImage($_GET['id'], null, $_GET['v'] ?? '1')->send($_GET['id']);
+$article = $cms->findByPostId($_GET['id']);          // your existing lookup
+
+$traceIt->framedImage($_GET['id'], $article->thumbUrl, $_GET['v'] ?? '1')
+        ->send($_GET['id']);
 ```
+
+**Pass the photo URL from your own data.** This endpoint runs inside your CMS and already
+has the post ID, so looking the article up is a local query you are effectively already
+making. That is better than having us remember the URL for you, for a reason that bites in
+practice: if an editor replaces an article's photo, a remembered URL keeps pointing at the
+old file until the article is published again, and composites keep carrying the old picture.
+A lookup is always current.
 
 Route `/traceit/v1/framed/{id}.jpg` to that script, and that path is what `data-service`
 in Step 3 points at. Needs `ext-gd`, and `allowedImageHosts` set in your config to the
 hostnames your photos come from — without it the fetcher would take any URL a caller
 supplies, which is an SSRF hole.
+
+> If your composite endpoint genuinely cannot reach your CMS — a separate host, a static
+> deployment — omit the second argument and pass the URL to `publish()` instead, as its
+> fourth argument. `framedImage()` falls back to that remembered value. Prefer the lookup
+> where you can.
 
 ---
 
@@ -294,16 +309,13 @@ point at a composite that already exists as a file, which means your own endpoin
       content="https://www.example.lk/traceit/v1/framed/<?= htmlspecialchars($article->id) ?>.jpg?v=1">
 ```
 
-For this to resolve, your publish hook must have recorded which photo belongs to the
-article — pass the image URL as the fourth argument to `publish()`:
+Nothing extra is needed for this to work. A crawler hitting that URL reaches the same
+endpoint from Step 4, which looks the article up and composites it — a crawler's first
+request is no different from a reader's, because neither has run your page.
 
-```php
-$traceIt->publish($article->id, $article->url, $article->publishedAt, $article->thumbUrl);
-```
-
-`framedImage()` then reads that URL back from its local cache, so the crawler's very first
-request composites correctly even though it has never run your page. Without it there is
-nothing to composite from and the tag 404s, so the crawler falls back to your plain photo.
+If you took the fallback route in Step 4 and left the lookup out, then this is the case that
+needs `publish()` to have been given the image URL, since there is nothing else for the
+endpoint to work from. Otherwise the tag 404s and the crawler falls back to your plain photo.
 
 ---
 
