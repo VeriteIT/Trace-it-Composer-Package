@@ -27,11 +27,10 @@ on first render by `qr()`.
 - `$publishedAt` is the **article's** publication date, ISO 8601. Omit it and the landing
   page falls back to the code's creation date, which is only the same thing when you publish
   live. An unreadable date is rejected (`invalid_published_at`), not silently replaced.
-- `$imageUrl` is **required if you use composite mode** (snippet 3), and for `og:image` to
-  carry the code. It is never sent to Trace-It: it is recorded in your local cache so that
-  `framedImage()` knows which photo to composite. Omit it and `framedImage()` throws
-  `Misconfigured` unless you hand it the URL directly on every call. Not needed in the default
-  overlay mode, which composites nothing.
+- `$imageUrl` is **required**. It is what `framedImage()` composites, and what lets
+  `og:image` carry the code. It is never sent to Trace-It: it is recorded in your local
+  cache so that `framedImage()` knows which photo to use. Omit it and `framedImage()`
+  throws `Misconfigured` unless you hand it the URL directly on every call.
 
 ### `qr(string|int $postId, …): Code`
 
@@ -42,7 +41,9 @@ Throws when there is no cached code **and** Trace-It cannot be reached. In a tem
 usually want **`qrOrNull()`**, which returns `null` instead: a missing badge beats a broken
 page.
 
-`qrPngUrl($postId)` is shorthand for the hosted PNG URL, or `null`.
+`qrPngUrl($postId)` is shorthand for the hosted PNG URL, or `null`. The page script does not
+need it — the code reaches readers through the composited image — but it is there when you
+want the bare QR for a dashboard, an email or a print layout.
 
 ### `framedImage(string|int $postId, ?string $imageUrl, string $version, ?Layout $layout): FramedImage`
 
