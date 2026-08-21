@@ -66,8 +66,9 @@ a path repository instead — same result, no fetch:
 }
 ```
 
-PHP 8.1+ and `ext-curl`. You also need `ext-gd` only if you choose to host the composite
-endpoint yourself (step 4) rather than letting us serve it.
+**PHP 8.1+, `ext-curl` and `ext-gd`.** All three are required — `ext-gd` is what composites
+the code into the photo, which is the whole point, so Composer will refuse to install
+without it. If `ext-gd` is a problem on your hosting, tell us before you start.
 
 Configure it once, wherever you wire up services:
 
@@ -96,12 +97,18 @@ $postId = $cms->publish($draft);                  // your existing code
 $traceIt->publish(
     $postId,
     'https://www.example.lk/article/' . $postId,  // must be https
-    $draft->publishedAt->format(DATE_ATOM)        // optional, see below
+    $draft->publishedAt->format(DATE_ATOM),       // optional, see below
+    $draft->thumbUrl                              // the article's photo
 );
 ```
 
-That is the whole payload: the post ID, the live article URL, and optionally when the
-article was published. No article body, no images, no credentials.
+The post ID, the live article URL, optionally when the article was published, and the
+thumbnail's URL. No article body, no image bytes, no credentials.
+
+**The fourth argument is the photo to composite.** It is recorded in your own cache and
+never sent to Trace-It — we neither receive nor store your image URLs. Step 4 needs it to
+know which photo to draw the code onto, and Step 5 has nothing else to work from, because a
+social crawler never runs your page.
 
 ### Send the publication date if you have it
 
