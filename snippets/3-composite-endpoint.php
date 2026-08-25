@@ -32,7 +32,7 @@
  *
  * …and point the page script at your own origin:
  *
- *   <script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
+ *   <script src="https://qr.trace-it.io/js/traceit-qr.js"
  *           data-selector="img.story-thumb"
  *           data-service="https://www.example.lk/traceit"></script>
  * ===========================================================================
@@ -45,6 +45,16 @@ require __DIR__ . '/vendor/autoload.php';   // adjust to your project's autoload
 use VeriteIt\TraceItQr\TraceIt;
 use VeriteIt\TraceItQr\TraceItException;
 
+/*
+ * THE SAME CONFIGURATION AS SNIPPET 1, not a second one. It is spelled out here
+ * because this file is a standalone endpoint and has to stand on its own — but in
+ * a real project this is your existing service, resolved from your container or
+ * bootstrap rather than constructed again.
+ *
+ * If you do construct it twice, keep cacheDir identical. Two different cache
+ * directories means the endpoint cannot see codes the publish hook already
+ * fetched, and every request pays a round trip to find that out.
+ */
 $traceIt = new TraceIt([
     'apiKey'   => getenv('TRACEIT_API_KEY'),
     'baseUrl'  => getenv('TRACEIT_BASE'),

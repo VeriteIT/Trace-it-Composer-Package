@@ -17,6 +17,30 @@ $traceIt = new TraceIt([
     'apiKey'   => getenv('TRACEIT_API_KEY'),   // sk_live_… — server-side only
     'baseUrl'  => getenv('TRACEIT_BASE'),      // https://<your-subdomain>.trace-it.io
     'cacheDir' => '/var/lib/trace-it',         // must be writable, should persist
+
+    /*
+     * Required by snippet 3, which is where the code is actually drawn into the
+     * photo. Set it here so there is one configuration rather than two.
+     *
+     * It is a security control, not a convenience: that endpoint fetches an image
+     * URL server-side, so without an allowlist it can be pointed at anything your
+     * server can reach. Snippet 3 has the detail.
+     */
+    'allowedImageHosts' => ['cdn.example.lk'],
+
+    /*
+     * Optional, and worth setting.
+     *
+     * Nothing in this package throws for a DEGRADATION — publish() below returns
+     * null rather than failing an editor's action, and a non-https article URL is
+     * dropped rather than rejected. Each is the right call, but together they mean
+     * a feature can stop working with no exception raised anywhere.
+     *
+     * Those messages default to trigger_error, which on a production php.ini
+     * reaches only the PHP error log. The signature is PSR-3's, so a LoggerInterface
+     * can be handed over with no adapter: fn (string $level, string $message).
+     */
+    'logger' => [$yourLogger, 'log'],
 ]);
 
 /* --- in your publish routine --------------------------------------------- */

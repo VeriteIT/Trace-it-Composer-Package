@@ -52,7 +52,7 @@
 <!-- C. The script tag. Once, in your layout, before </body>.              -->
 <!-- ===================================================================== -->
 
-<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
+<script src="https://qr.trace-it.io/js/traceit-qr.js"
         data-selector="img.story-thumb"
         data-service="https://www.example.lk/traceit"></script>
 
@@ -99,7 +99,7 @@
 <!-- If adding data-article-id is awkward, let the script read the ID from the
      URL instead. Adjust the pattern to match your article routes. -->
 
-<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
+<script src="https://qr.trace-it.io/js/traceit-qr.js"
         data-selector="img.story-thumb"
         data-service="https://www.example.lk/traceit"
         data-id-from-path="/article/([A-Za-z0-9._-]+)"></script>

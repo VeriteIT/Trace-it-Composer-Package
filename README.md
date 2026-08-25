@@ -20,10 +20,15 @@ Verite IT will give you three things. Ask if you do not have them:
 |---|---|---|
 | API key | `sk_live_…` | your server config — **never in a page** |
 | Your Trace-It base URL | `https://acme.trace-it.io` | your server config |
-| Script URL | Verite IT will give you the real host | one `<script>` tag |
+| Script URL | `https://qr.trace-it.io/js/traceit-qr.js` | one `<script>` tag |
 
-> `YOUR-TRACEIT-HOST` throughout this document is a placeholder. Replace it with the
-> host Verite IT gives you — it is not a real address and will not resolve.
+Only the first two are issued per publisher. The script URL is the same for everyone and is
+already live, so you can paste it as written.
+
+> **`example.lk` in this document is a placeholder for your own site.** Every
+> `www.example.lk` and `cdn.example.lk` needs replacing with your real hostnames. The one
+> that matters most is `allowedImageHosts` — it is a security control, and a placeholder
+> left in it authorises fetching from a domain that is not yours.
 
 And tell them, in return:
 
@@ -76,14 +81,34 @@ Configure it once, wherever you wire up services:
 use VeriteIt\TraceItQr\TraceIt;
 
 $traceIt = new TraceIt([
-    'apiKey'   => getenv('TRACEIT_API_KEY'),   // sk_live_…
-    'baseUrl'  => getenv('TRACEIT_BASE'),      // https://acme.trace-it.io
-    'cacheDir' => '/var/lib/trace-it',         // must be writable
+    'apiKey'            => getenv('TRACEIT_API_KEY'),   // sk_live_…
+    'baseUrl'           => getenv('TRACEIT_BASE'),      // https://acme.trace-it.io
+    'cacheDir'          => '/var/lib/trace-it',         // must be writable
+    'allowedImageHosts' => ['cdn.example.lk'],          // required by Step 4
+    'logger'            => [$yourLogger, 'log'],        // optional, see below
 ]);
 ```
 
 > **The key is server-side only.** If it reaches a page, anyone can read it out and create
 > codes against your account.
+
+### Send our warnings somewhere you will read them
+
+Nothing in this package throws for a *degradation*. `publish()` returns `null` rather than
+failing an editor's action, a non-https article URL is dropped rather than rejected, and a
+lock that cannot be taken proceeds without one. Each is the right call on its own — together
+they mean a feature can stop working with no exception raised anywhere.
+
+By default those messages go to `trigger_error`, which on a production `php.ini` reaches
+only the PHP error log. Pass `logger` and they are yours. The signature is PSR-3's, so a
+`LoggerInterface` needs no adapter:
+
+```php
+'logger' => [$psr3Logger, 'log'],   // fn (string $level, string $message)
+```
+
+Levels are `warning` and `notice`, and messages arrive prefixed `trace-it: `. The one worth
+alerting on is `targetUrl … is not https` — see [Things that will bite you](#things-that-will-bite-you).
 
 ---
 
@@ -162,7 +187,7 @@ One attribute, so the script knows which article each image belongs to:
 Then one script tag, once, in your layout:
 
 ```html
-<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
+<script src="https://qr.trace-it.io/js/traceit-qr.js"
         data-selector="img.story-thumb"
         data-service="https://www.example.lk/traceit"></script>
 ```
@@ -252,7 +277,7 @@ of them does not fetch fifty codes a reader may never scroll to.
 If adding `data-article-id` is awkward, the script can take the ID from the URL instead:
 
 ```html
-<script src="https://YOUR-TRACEIT-HOST/js/traceit-qr.js"
+<script src="https://qr.trace-it.io/js/traceit-qr.js"
         data-selector="img.story-thumb"
         data-id-from-path="/article/([A-Za-z0-9._-]+)"></script>
 ```
@@ -276,13 +301,41 @@ never receives your image URLs, so it cannot burn a code into a photo it has nev
 and keeping it this way means you are not handing us your image bandwidth or a copy of
 every thumbnail you publish.
 
-```php
-// GET /qr-image.php?id=108-347979&v=1
-$article = $cms->findByPostId($_GET['id']);          // your existing lookup
+The whole file, as `/qr-image.php`:
 
-$traceIt->framedImage($_GET['id'], $article->thumbUrl, $_GET['v'] ?? '1')
-        ->send($_GET['id']);
+```php
+<?php
+
+declare(strict_types=1);
+
+require __DIR__ . '/vendor/autoload.php';   // adjust to your autoloader
+
+use VeriteIt\TraceItQr\TraceItException;
+
+// $traceIt is the instance you configured in Step 0.
+
+$postId  = (string) ($_GET['id'] ?? '');
+$article = $cms->findByPostId($postId);     // your existing lookup
+$version = (string) ($_GET['v'] ?? '1');
+
+try {
+    // Sends Content-Type, Content-Length, Cache-Control and a filename for the
+    // save dialog, then the bytes.
+    $traceIt->framedImage($postId, $article->thumbUrl, $version)->send($postId);
+} catch (TraceItException $e) {
+    error_log('[traceit] composite failed for ' . $postId . ': ' . $e->getMessage());
+    http_response_code(404);
+}
 ```
+
+**Do not drop the `try`/`catch`.** `framedImage()` throws — no code minted yet, an image host
+not on the allowlist, a photo that cannot be fetched. Uncaught, that is a 500 with an HTML
+error body served where an image was expected, and on a server with `display_errors` on it
+puts a stack trace on the public internet.
+
+Caught, it is a clean 404, which is exactly what the page script expects: it leaves the
+publisher's original photo on screen and the reader sees nothing wrong. **404 rather than
+500** because there is no composite for this request and nothing a retry would fix.
 
 **Pass the photo URL from your own data.** This endpoint runs inside your CMS and already
 has the post ID, so looking the article up is a local query you are effectively already
@@ -291,10 +344,34 @@ practice: if an editor replaces an article's photo, a remembered URL keeps point
 old file until the article is published again, and composites keep carrying the old picture.
 A lookup is always current.
 
-Route `/traceit/v1/framed/{id}.jpg` to that script, and that path is what `data-service`
-in Step 3 points at. Needs `ext-gd`, and `allowedImageHosts` set in your config to the
-hostnames your photos come from — without it the fetcher would take any URL a caller
-supplies, which is an SSRF hole.
+Then route `/traceit/v1/framed/{id}.jpg` onto it — that path is what `data-service` in
+Step 3 points at, so without this rule the script gets a 404 and no codes appear anywhere:
+
+```apache
+RewriteRule ^traceit/v1/framed/([A-Za-z0-9_-]+)\.jpg$ /qr-image.php?id=$1 [QSA,L]
+```
+
+```nginx
+location ~ ^/traceit/v1/framed/([A-Za-z0-9_-]+)\.jpg$ {
+    try_files /dev/null /qr-image.php?id=$1&$args;
+}
+```
+
+Needs `ext-gd`, and `allowedImageHosts` set in your config to the hostnames your photos come
+from — without it the fetcher would take any URL a caller supplies, which is an SSRF hole.
+
+### It does real work per request, so put a cache in front
+
+This package deliberately keeps **no copy of your photos**. Each request fetches the source
+image, composites in memory, sends the bytes and discards them — nothing is written to disk
+but the small code record and our QR PNG.
+
+That means a cache miss costs one outbound fetch plus one GD operation. The response is sent
+`immutable` with a one-year max-age, so a CDN or the reader's browser absorbs nearly all of
+it in normal traffic — but a cold cache, a crawler sweep or a version bump does real work.
+If your traffic warrants it, put this endpoint behind your CDN, or have it write the bytes to
+disk and serve later hits from there. We leave that to you because it depends on your
+infrastructure, not ours.
 
 > If your composite endpoint genuinely cannot reach your CMS — a separate host, a static
 > deployment — omit the second argument and pass the URL to `publish()` instead, as its
@@ -355,9 +432,21 @@ mapping. If it is wiped nothing breaks and no quota is spent — codes are looke
 Trace-It again rather than re-created — but every article pays one extra round trip until
 it warms up.
 
-**Changing the badge needs a cache bust.** Composites are served `immutable`, so browsers
-do not re-ask. When we change the badge design we bump a version in the URL; if you host
-the endpoint yourself (step 4), bump the `v` parameter.
+**A replaced photo stays invisible until you bump `v`.** This is the one that surprises
+people. Composites are served `immutable` with a one-year max-age, which is right for a file
+that never changes — but it means a browser holding one will *never* ask again. So if an
+editor swaps an article's photo after publication, readers keep seeing the old picture with
+the code on it. Same for a badge redesign.
+
+The `v` parameter is the entire fix: a new value is a new URL, so browsers and caches treat
+it as a new file. If photo swaps are routine for you, put something per-article in there —
+a photo ID, or a hash of the image URL — rather than one global number, or a single swap
+means bumping the version for every reader of every article.
+
+**Badge position and size are server-side.** They are decided when the image is composited,
+so they live in your PHP config, not on the script tag — `corner`, `scale`, `padding`,
+`minPx`/`maxPx`. See `Layout` in [PACKAGE-REFERENCE.md](PACKAGE-REFERENCE.md). Changing any
+of them needs a `v` bump too, for the reason above.
 
 ---
 
@@ -385,4 +474,13 @@ that is the detail.
 ## Support
 
 Send Verite IT the output of `preflight.php`. It reports versions, configuration and the
-exact failure, which is usually enough to answer the question straight away.
+exact failure, which is usually enough to answer the question straight away. It never prints
+your API key, only its prefix, so the output is safe to paste into an email.
+
+---
+
+## Licence
+
+Proprietary — see [LICENSE](LICENSE). Licensed for use by organisations with a current
+Trace-It agreement: install it on as many of your own servers as you like and modify it
+freely, but it may not be redistributed. Your API key is confidential and non-transferable.
