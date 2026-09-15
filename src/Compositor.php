@@ -37,8 +37,8 @@ final class Compositor
     ) {
         if (!\extension_loaded('gd')) {
             throw new Misconfigured(
-                'Server-side compositing needs ext-gd, which is not loaded. Either enable it, '
-                . 'or use overlay mode, which composites nothing.'
+                'Server-side compositing needs ext-gd, which is not loaded. Enable it in '
+                . 'php.ini — there is no mode that puts the code in the file without it.'
             );
         }
     }
