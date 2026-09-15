@@ -360,6 +360,64 @@ location ~ ^/traceit/v1/framed/([A-Za-z0-9_-]+)\.jpg$ {
 Needs `ext-gd`, and `allowedImageHosts` set in your config to the hostnames your photos come
 from — without it the fetcher would take any URL a caller supplies, which is an SSRF hole.
 
+### On a framework, build the response rather than calling `send()`
+
+`send()` calls `header()` and echoes the body itself. That is right for the plain endpoint
+above and wrong inside CodeIgniter, Laravel or Symfony, all of which buffer the response and
+send it themselves at the end of the request. Echoing past them puts the image bytes ahead
+of the framework's own output, and the headers you set by hand are then either overwritten
+by the framework's or duplicated alongside them. The usual symptom is a broken image whose
+`Content-Type` is `text/html`, which looks like a compositing failure and is not one.
+
+Use the two accessors instead. `$framed->bytes` is the encoded image, and
+`$framed->headers($postId)` returns exactly what `send()` would have written, as a plain
+`name => value` array — which is already the shape Laravel and Symfony want.
+
+```php
+$framed = $traceIt->framedImage($postId, $article->thumbUrl, $version);
+```
+
+**CodeIgniter 4**
+
+```php
+$response = $this->response->setBody($framed->bytes);
+
+foreach ($framed->headers($postId) as $name => $value) {
+    $response->setHeader($name, $value);
+}
+
+return $response;
+```
+
+**CodeIgniter 3**
+
+```php
+foreach ($framed->headers($postId) as $name => $value) {
+    $this->output->set_header($name . ': ' . $value);
+}
+
+$this->output->set_output($framed->bytes);
+```
+
+**Laravel**
+
+```php
+return response($framed->bytes, 200, $framed->headers($postId));
+```
+
+**Symfony**
+
+```php
+return new Response($framed->bytes, 200, $framed->headers($postId));
+```
+
+Two things carry over from the plain endpoint. **Keep the `try`/`catch`** — but return the
+framework's own 404 from the catch block (`throw PageNotFoundException::forPageNotFound()`,
+`abort(404)`, `throw new NotFoundHttpException()`) rather than `http_response_code()`, which
+is bypassed for the same reason `send()` is. And **skip the rewrite rule** — declare
+`/traceit/v1/framed/{id}.jpg` as a route in the framework, pointing at this controller.
+It is the path that matters, not how the request reaches you.
+
 ### It does real work per request, so put a cache in front
 
 This package deliberately keeps **no copy of your photos**. Each request fetches the source
