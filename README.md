@@ -377,18 +377,6 @@ Use the two accessors instead. `$framed->bytes` is the encoded image, and
 $framed = $traceIt->framedImage($postId, $article->thumbUrl, $version);
 ```
 
-**CodeIgniter 4**
-
-```php
-$response = $this->response->setBody($framed->bytes);
-
-foreach ($framed->headers($postId) as $name => $value) {
-    $response->setHeader($name, $value);
-}
-
-return $response;
-```
-
 **CodeIgniter 3**
 
 ```php
