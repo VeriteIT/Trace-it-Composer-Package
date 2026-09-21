@@ -71,7 +71,11 @@ if ($imageUrl === null) {
 }
 
 try {
-    $framed = $traceIt->framedImage($postId);
+    // Pass the URL rather than relying on publish() having remembered it. A reused
+    // code returns the existing record, which carries no remembered URL — so the
+    // version that leans on memory fails on exactly the reuse we recommend for
+    // saving quota. This is also the call the guide tells you to make.
+    $framed = $traceIt->framedImage($postId, $imageUrl);
 } catch (TraceItException $e) {
     printf("%s3. framedImage() failed: %s%s", PHP_EOL, $e->getMessage(), PHP_EOL);
     exit(1);
