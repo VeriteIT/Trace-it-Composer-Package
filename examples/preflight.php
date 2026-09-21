@@ -65,9 +65,22 @@ echo '==============================' . PHP_EOL;
 
 section('Environment');
 
-PHP_VERSION_ID >= 80100
+/*
+ * The minimum comes from the package's own composer.json rather than a literal,
+ * because there are two builds of this package and hardcoding 8.1 made the 7.4
+ * build tell a correctly configured 7.4 server that it was unsupported. One
+ * requirement, declared in one place, read by both.
+ */
+$minPhp = '8.1';
+$pkg = @json_decode((string) @file_get_contents(__DIR__ . '/../composer.json'), true);
+if (isset($pkg['require']['php']) && preg_match('~(\d+)\.(\d+)~', $pkg['require']['php'], $mv)) {
+    $minPhp = $mv[1] . '.' . $mv[2];
+}
+$minId = ((int) explode('.', $minPhp)[0]) * 10000 + ((int) explode('.', $minPhp)[1]) * 100;
+
+PHP_VERSION_ID >= $minId
     ? result('PASS', 'PHP version', PHP_VERSION)
-    : result('FAIL', 'PHP version', PHP_VERSION, 'This package needs PHP 8.1 or newer.');
+    : result('FAIL', 'PHP version', PHP_VERSION, 'This package needs PHP ' . $minPhp . ' or newer.');
 
 extension_loaded('curl')
     ? result('PASS', 'ext-curl', (string) (curl_version()['version'] ?? ''))
