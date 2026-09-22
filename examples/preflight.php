@@ -86,11 +86,30 @@ extension_loaded('curl')
     ? result('PASS', 'ext-curl', (string) (curl_version()['version'] ?? ''))
     : result('FAIL', 'ext-curl', 'not loaded', 'Enable extension=curl in php.ini. Required.');
 
-extension_loaded('gd')
-    ? result('PASS', 'ext-gd', 'loaded')
-    : result('FAIL', 'ext-gd', 'not loaded',
-        'Enable extension=gd in php.ini. Required: compositing is what puts the code into '
-        . 'the file a reader saves, and there is no mode that works without it.');
+/*
+ * ext-gd is a suggestion in composer.json, not a requirement, because only
+ * framedImage() uses it — a server that just registers codes with publish()
+ * never touches GD. Deployments are split that way in practice: the CMS
+ * publishes, a separate public site serves the Step 4 endpoint.
+ *
+ * So failing outright here would cry wolf on the publishing half. It is a FAIL
+ * only when this server is evidently meant to composite — an image URL to test,
+ * or an allowlist configured, which is required for compositing and pointless
+ * otherwise. Everywhere else it is reported without failing the run, because an
+ * exit code of 1 should mean "this server is not ready", not "this server does
+ * not do the part it was never going to do".
+ */
+if (extension_loaded('gd')) {
+    result('PASS', 'ext-gd', 'loaded');
+} elseif ($imageUrl !== null || getenv('TRACEIT_ALLOWED_IMAGE_HOSTS') !== false) {
+    result('FAIL', 'ext-gd', 'not loaded',
+        'This server is set up to composite, and compositing is what puts the code into '
+        . 'the file a reader saves. Enable extension=gd in php.ini — there is no mode '
+        . 'that works without it.');
+} else {
+    result('SKIP', 'ext-gd', 'not loaded — fine if this server only calls publish(); '
+        . 'required wherever the Step 4 endpoint runs');
+}
 
 /*
  * The single most common failure in a fresh PHP install, and the error it produces

@@ -71,9 +71,19 @@ a path repository instead — same result, no fetch:
 }
 ```
 
-**PHP 8.1+, `ext-curl` and `ext-gd`.** All three are required — `ext-gd` is what composites
-the code into the photo, which is the whole point, so Composer will refuse to install
-without it. If `ext-gd` is a problem on your hosting, tell us before you start.
+**PHP 8.1+, `ext-curl` and `ext-json` are required. `ext-gd` is listed as a suggestion,
+but Step 4 does not work without it** — it is what composites the code into the photo,
+which is the whole point.
+
+It is a suggestion rather than a requirement for one reason: only `framedImage()` touches
+GD, so a server that just registers codes with `publish()` never needs it, and making
+Composer refuse there helps nobody. It also means a server *missing* GD can still install
+the package and run `preflight.php`, which then tells you GD is missing — whereas a hard
+requirement blocked the very tool that diagnoses it.
+
+So on whichever server hosts the Step 4 endpoint, `ext-gd` is not optional. On most systems
+it is one package away (`php8.1-gd` or similar) and a restart. If it is genuinely a problem
+on your hosting, tell us before you start — there are other ways to arrange this.
 
 Configure it once, wherever you wire up services:
 

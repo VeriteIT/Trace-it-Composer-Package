@@ -14,8 +14,10 @@
   "require": {
     "php": ">=8.1",
     "ext-curl": "*",
-    "ext-json": "*",
-    "ext-gd": "*"
+    "ext-json": "*"
+  },
+  "suggest": {
+    "ext-gd": "Required to composite the code into the photo (framedImage), which is what makes Save-as carry it. Not needed on a server that only registers codes with publish()."
   },
   "autoload": {
     "psr-4": {
