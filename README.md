@@ -433,6 +433,37 @@ If your traffic warrants it, put this endpoint behind your CDN, or have it write
 disk and serve later hits from there. We leave that to you because it depends on your
 infrastructure, not ours.
 
+### If the public server cannot composite, generate ahead of time instead
+
+Step 4 needs `ext-gd` on whichever machine answers reader traffic. Sometimes that is
+the one machine you cannot change — managed hosting, a static deployment, or a CMS that
+is admin-only so the endpoint has to live somewhere else entirely.
+
+`examples/prewarm.php` moves the work to publish time and to a machine you choose,
+normally the CMS, which already has the photo, the article data and usually `ext-gd`:
+
+```bash
+php examples/prewarm.php /var/www/example.lk/traceit 108347979 "https://cdn.example.lk/a.jpg"
+```
+
+That writes `/var/www/example.lk/traceit/v1/framed/108347979.jpg` — exactly the path the
+page script asks for. Point `data-service` at the directory and **the public side needs no
+PHP, no `ext-gd` and no endpoint at all**, only static file serving. Feed it
+`postId<TAB>imageUrl` on stdin with `--stdin` to backfill an archive.
+
+Cache busting still works: the script requests `?v=`, and a query string is part of the
+cache key for browsers and CDNs, so bumping the version refetches even though the filename
+never changes.
+
+**The trade-off, plainly:** a pre-generated file is a snapshot. Replace an article's photo
+and the composite keeps the old picture until this runs again for that article — the
+on-demand endpoint cannot go stale that way. Call it from your publish hook rather than a
+nightly cron and the window stays small.
+
+Getting the files to where the public site serves them is yours, because it depends on your
+hosting: write straight into the docroot if they share a filesystem, rsync after each run,
+or upload to the object storage your images already come from.
+
 > If your composite endpoint genuinely cannot reach your CMS — a separate host, a static
 > deployment — omit the second argument and pass the URL to `publish()` instead, as its
 > fourth argument. `framedImage()` falls back to that remembered value. Prefer the lookup
