@@ -387,6 +387,10 @@ foreach ($framed->headers($postId) as $name => $value) {
 $this->output->set_output($framed->bytes);
 ```
 
+`snippets/3-composite-endpoint-codeigniter3.php` is the whole controller, with the
+route and the `composer_autoload` line — drop that in rather than assembling it from
+the fragment above.
+
 **Laravel**
 
 ```php
