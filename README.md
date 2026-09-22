@@ -14,6 +14,20 @@ reconfiguration, no bucket permission changes, no work in your image pipeline.
 
 ## Before you start
 
+**Check the server first, in one file, before installing anything.**
+`examples/server-check.php` is self-contained — no Composer, no package, no `ext-gd` —
+so it runs on the server that cannot yet install the package and tells you why:
+
+```bash
+php server-check.php <oneOfYourArticleIds> <aRealArticleImageUrl>
+```
+
+It reports the PHP version and which build applies, the extensions, whether outbound HTTPS
+and your photo host actually work from that machine, and whether your article IDs are usable.
+It ends by saying whether that server can serve composited images or only register codes.
+Written in deliberately old PHP so an outdated interpreter gets a version report rather than
+a parse error. Send us the output.
+
 Verite IT will give you three things. Ask if you do not have them:
 
 | | Example | Where it goes |
