@@ -5,29 +5,21 @@ declare(strict_types=1);
 namespace VeriteIt\TraceItQr;
 
 /**
- * The Trace-It API. THE ONLY CLASS THAT KNOWS THE WIRE FORMAT.
- * ===========================================================================
- * Contract verified against the Trace-It source (the Trace-It API,
- * the Trace-It API) and exercised against the live service:
+ * The Trace-It API — the only class that knows the wire format.
  *
  *   Base   https://<tenant-subdomain>.trace-it.io
  *   Auth   Authorization: Bearer sk_live_…
  *
- *   POST /api/v1/qr                    { postId, title?, targetUrl?, folder? }
- *                                      201 created:true   charges 1 quota unit
- *                                      200 created:false  repeat, charges nothing
- *   GET  /api/v1/qr/by-post/{postId}   200 the code, qr.png empty
- *                                      404 { error: { code: 'not_found' } }
+ *   POST /api/v1/qr                    201 created:true  charges one quota unit
+ *                                      200 created:false repeat, charges nothing
+ *   GET  /api/v1/qr/by-post/{postId}   200 the code, or 404
  *
- *   Errors { error: { code, message } } — codes seen in practice:
- *          invalid_post_id, invalid_target_url, invalid_published_at,
- *          unauthorized, rate_limited, quota_exceeded, post_id_conflict,
- *          id_conflict, server_misconfigured, internal_error
+ * Error responses are { error: { code, message } }; PACKAGE-REFERENCE.md lists
+ * the codes.
  *
  * SERVER-SIDE ONLY. Every call here sends the secret key, so this class must
  * never be reachable from a browser. Anyone who can read the key can mint
  * against your Trace-It account.
- * ===========================================================================
  */
 final class Client
 {

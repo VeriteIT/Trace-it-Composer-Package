@@ -7,7 +7,7 @@ namespace VeriteIt\TraceItQr;
 /**
  * A validated Trace-It post ID.
  *
- * The rules are Trace-It's, copied from sanitizePostId() in its the Trace-It API:
+ * The rules are Trace-It's own, mirrored here so they are enforced before a call:
  * letters, digits, underscore and hyphen; must start AND end alphanumeric;
  * lowercased, so post IDs are case-insensitive; 48 characters maximum.
  *
